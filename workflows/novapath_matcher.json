@@ -1,0 +1,590 @@
+{
+  "name": "***My workflow Sep 26 (Sep 27 at 14:55:29)",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1040,
+        224
+      ],
+      "id": "d0c0db14-6c63-4f4e-a2d0-4eecd1902b46",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1P7ZBC9_JdvpkXyY_SQBZxWm1i2Z8k9wFjseBhO8cYfE",
+          "mode": "list",
+          "cachedResultName": "MCP mock data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1P7ZBC9_JdvpkXyY_SQBZxWm1i2Z8k9wFjseBhO8cYfE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1312529578,
+          "mode": "list",
+          "cachedResultName": "JD",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1P7ZBC9_JdvpkXyY_SQBZxWm1i2Z8k9wFjseBhO8cYfE/edit#gid=1312529578"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        -768,
+        144
+      ],
+      "id": "4fc9d603-f97d-450d-9a74-fb064e96e1f3",
+      "name": "Get row(s) in sheet",
+      "executeOnce": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0mEWSDcT4mkpJh9S",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "chatgpt-4o-latest",
+          "mode": "list",
+          "cachedResultName": "CHATGPT-4O-LATEST"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a strict JSON normalizer for job descriptions.\n\nReturn exactly ONE JSON object (no array, no prose). Temperature 0: be literal; do not invent values.\n\nTOP-LEVEL OUTPUT KEYS (Supabase shape only):\njob_id, job_number, company, department, job_title,\nlocation_city, location_state_province, location_country,\nremote,\ndate_posted,\npay_currency, pay_min, pay_max, pay_period,\nmin_year_req, required_education, preferred_education,\nrole_level,\nrequired_skills,\nrequired_qualifications, responsibilities, good_to_have,\nraw_json\n\nRULES\n- job_id: \"JD\" if missing upstream.\n- Strings trimmed; empty → null. Numbers are integers. Arrays lowercased, de-duped, concise (≤20 items for required_skills).\n- raw_json contains only normalized_jd (richer details). Do not add any other top-level keys.\n\nINPUT FORMATS (auto-detect)\n- Table: largest consistent block of pipe/tab/fixed-width; first row is header unless numeric. Ignore non-table text.\n- Free text: treat as one JD; split bullets by common markers (•, -, —, *, 1.), respecting wrapped lines.\n\nNORMALIZATION RULES (domain-agnostic)\n- Location → location_city, location_state_province, location_country. If only “remote/hybrid”, leave city/state null; set country if explicit. Never put “remote” in city.\n- remote (boolean): true if remote OR hybrid allowed; false if onsite only; null if unclear.\n- remote nuance (raw_json.normalized_jd.location.remote_policy): one of remote | hybrid | onsite | remote_or_onsite | unspecified. If onsite cities are listed, include in onsite_offices.\n- Date → ISO YYYY-MM-DD when present; else null.\n- Compensation:\n  • pay_currency (USD, CAD, EUR, GBP, …) when explicit.\n  • Normalize numbers: 90k→90000; 1.2m→1200000.\n  • Extract pay_min, pay_max.\n  • pay_period ∈ [\"yearly\",\"monthly\",\"weekly\",\"daily\",\"hourly\",\"unspecified\"]; map “year/yr/annual/salary”→\"yearly\".\n  • If JD states structure (e.g., “salary only, no bonus”, “choose salary vs stock”), add to raw_json.normalized_jd.employment.comp_structure_notes.\n- Experience: min_year_req = smallest explicit minimum (e.g., “2–4 years”→2). If only “experience” with no number → null.\n- Education:\n  • required_education: highest explicit required in [\"bachelor's\",\"master's\",\"phd\"] or null.\n  • preferred_education: same set, only if explicitly preferred.\n- Role level: map to [\"junior\",\"mid\",\"senior\",\"staff\",\"principal\",\"manager\",\"director\",\"vp\",\"unspecified\"]. If unstated → \"unspecified\".\n\nSKILLS & BUCKETING (strict)\n- required_skills: ONLY hard, verifiable competencies that the JD explicitly requires (look for headings like “requirements”, “must have”, “minimum”, “X+ years”, or sentences with “must/required”). Use the JD’s own phrasing; do NOT add synonyms. Do NOT include generic soft traits (e.g., communication, collaboration, leadership) here unless they appear inside the Required section as assessable competencies.\n- good_to_have: competencies called out as “preferred/nice to have/plus” OR clearly implied by “Responsibilities/What you’ll do” but NOT stated as hard requirements. Place soft skills (communication, storytelling, collaboration, stakeholder management, etc.) here unless the JD explicitly lists them as required.\n- required_qualifications: concise bullet-like phrases from the “Required/Minimum” section (keep as short fragments, not sentences).\n- responsibilities: verb-led lines from “Responsibilities/What you’ll do”.\n- Keep skills/tools/methods as short noun phrases; preserve multi-word terms as they appear (e.g., “time series analysis”, “quality control”, “lesson planning”). Normalize trivial variants (hyphen/underscore → space; singular/plural to the dominant form in the JD). Do NOT collapse words (“data warehousing”, not “datawarehousing”).\n\nKEYWORDS & RAW JSON (for downstream matching)\n- keywords (top-level is NOT allowed). Instead, populate raw_json.normalized_jd.jd_vocabulary as the de-duped union of:\n  must_have_skills + nice_to_have_skills + tools_and_tech (all lowercased, unique).\n- Also populate raw_json.normalized_jd.keywords as a de-duped union of required_skills + tools_and_tech + domain_experience + good_to_have (≤50).\n\nraw_json.normalized_jd schema (extend only within this object):\n{\n  \"location\": {\n    \"remote_policy\": \"remote|hybrid|onsite|remote_or_onsite|unspecified\",\n    \"onsite_requirement\": \"days_per_week:N|''\",\n    \"onsite_offices\": []\n  },\n  \"employment\": {\n    \"type\": \"full_time|part_time|contract|internship|temporary|unspecified\",\n    \"pay_currency\": \"\",\n    \"pay_min\": null,\n    \"pay_max\": null,\n    \"pay_period\": \"yearly|monthly|weekly|daily|hourly|unspecified\",\n    \"comp_structure_notes\": []\n  },\n  \"work_auth\": {\n    \"visa_sponsorship\": \"yes|no|unspecified\",\n    \"security_clearance\": \"none|public_trust|secret|top_secret|other\"\n  },\n  \"years_experience_min\": null,\n  \"education_required\": [],\n  \"education_preferred\": [],\n  \"certifications_required\": [],\n  \"certifications_preferred\": [],\n  \"must_have_skills\": [],\n  \"nice_to_have_skills\": [],\n  \"tools_and_tech\": [],\n  \"domain_experience\": [],\n  \"responsibilities\": [],\n  \"benefits\": [],\n  \"eq_eo_statement\": \"\",\n  \"anti_requirements\": [],\n  \"keywords\": [],\n  \"jd_vocabulary\": [],\n  \"source_excerpt\": \"\",\n\n  // NEW: hidden/implicit requirements inferred from the JD text (for downstream AI matching)\n  \"hidden_required_skills\": [\n    // up to 7 items, each: { \"term\": \"\", \"rationale\": \"\", \"evidence\": \"\", \"confidence\": 0.0 }\n  ]\n}\n\nNEW — Hidden requirement inference (conservative)\n- Extract up to 7 implicit/hidden requirements a qualified hire would realistically need but that are NOT explicitly listed as required_skills.\n- Each item MUST include:\n  • term: concise, generic capability (lowercased; avoid brand names if a generic exists)\n  • rationale: ≤ 20 words explaining why this is needed\n  • evidence: ≤ 15 words: an exact or near-exact snippet from the JD text that implies it\n  • confidence: 0.0–1.0, reflecting strength of implication\n- DO NOT duplicate anything already in required_skills; dedupe across items; keep domain-agnostic.\n- Examples of acceptable hidden terms (when strongly implied by text): \"stakeholder management\", \"experimental design\", \"data governance\", \"version control\", \"process optimization\", \"curriculum design\", \"quality assurance\", \"inventory planning\", etc.\n\nSILENT SELF-AUDIT (before emitting JSON)\n1. All top-level keys present; only allowed keys used.\n2. location_city ≠ \"remote\".\n3. remote aligns with narrative; if both remote and onsite → remote=true and remote_policy=\"remote_or_onsite\".\n4. date_posted is ISO or null.\n5. pay_period in allowed set; numbers normalized.\n6. min_year_req is the smallest explicit minimum.\n7. required_education/preferred_education in allowed tokens; or null/[] if not explicit.\n8. required_skills excludes generic soft skills unless explicitly required; soft skills live in good_to_have.\n9. responsibilities are verb-led; do NOT mix into required_skills.\n10. Arrays are lowercased, unique; required_skills ≤ 20 items.\n11. raw_json.normalized_jd.jd_vocabulary is the union of must/nice/tools; keywords populated as defined.\n12. If uncertain → null/[] rather than guessing.\n13. NEW: hidden_required_skills contains 0–7 items with term/rationale/evidence/confidence; none of its terms repeat required_skills.\n",
+              "role": "system"
+            },
+            {
+              "content": "=Normalize this job description into the required JSON shape.\n\nIf you receive an array of JDs, return ONE object per call (we will batch upstream).\n\nInput payload:\n{{$json.jd_text || $json.message?.content || ''}}\n\nGuidance:\n- Keep the Supabase top-level keys exactly as specified by the system message.\n- Put only hard, explicitly required competencies into required_skills.\n- Move preferred or responsibility-implied competencies (including soft skills like communication/storytelling) into good_to_have unless the JD explicitly marks them as required.\n- Preserve multi-word skill phrases as written in the JD; do not invent synonyms.\n- Populate raw_json.normalized_jd.jd_vocabulary and raw_json.normalized_jd.keywords as instructed.\n- NEW: Also produce raw_json.normalized_jd.hidden_required_skills with up to 7 implicit/hidden requirements, each including {term, rationale, evidence, confidence}, strictly supported by the JD text.\n"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -480,
+        144
+      ],
+      "id": "d6055329-e9bd-46c0-9bf0-ae43e42d6918",
+      "name": "Message a model",
+      "credentials": {
+        "openAiApi": {
+          "id": "HEMykdMGRdeePESL",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1P7ZBC9_JdvpkXyY_SQBZxWm1i2Z8k9wFjseBhO8cYfE",
+          "mode": "list",
+          "cachedResultName": "MCP mock data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1P7ZBC9_JdvpkXyY_SQBZxWm1i2Z8k9wFjseBhO8cYfE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1928225974,
+          "mode": "list",
+          "cachedResultName": "Resume",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1P7ZBC9_JdvpkXyY_SQBZxWm1i2Z8k9wFjseBhO8cYfE/edit#gid=1928225974"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [
+        -768,
+        320
+      ],
+      "id": "e9b95850-7fd0-497a-b245-fc62a8b175ad",
+      "name": "Get row(s) in sheet1",
+      "executeOnce": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0mEWSDcT4mkpJh9S",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "chatgpt-4o-latest",
+          "mode": "list",
+          "cachedResultName": "CHATGPT-4O-LATEST"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a strict JSON generator.\n\nReturn exactly ONE JSON array containing ONE OR MORE objects (one object per resume). No prose, no comments, no explanations, no markdown, no trailing commas.\n\nYour task is to extract COMPETENCIES from resume text (domain-agnostic). Competencies include skills, tools, methods, frameworks, platforms, languages, libraries, analytical techniques, and credentials. Keep interpersonal traits as soft skills (separate).\n\nEACH OBJECT MUST INCLUDE THESE KEYS (all required):\n- candidate_direct_skills          // string[]\n- candidate_inferred_skills        // string[]\n- hidden_candidate_skills          // NEW: Array<{ term, rationale, evidence, confidence }>\n- candidate_education              // string[]\n- candidate_soft_skills            // string[]\n- meta                             // object\n\nRULES\n- All arrays: UNIQUE, LOWERCASED strings; trim whitespace; preserve multi-word phrases EXACTLY as written (do NOT invent synonyms or collapse spaces).\n- candidate_direct_skills: ONLY competencies explicitly stated in the resume.\n- candidate_inferred_skills: higher-level competencies STRONGLY implied by the resume’s work (objectively assessable). Do NOT duplicate soft skills here. Prefer generic capability terms (e.g., “data warehousing”, “etl”, “time series analysis”).\n- hidden_candidate_skills (NEW): up to 10 implicit capabilities the candidate likely has, each with:\n  { \"term\": \"<concise generic capability>\", \n    \"rationale\": \"<≤20 words why this follows from evidence>\", \n    \"evidence\": \"<≤15-word exact or near-exact snippet from resume>\", \n    \"confidence\": <0.0–1.0> }\n  • Be conservative and evidence-based. \n  • Do NOT include interpersonal traits here (those belong in candidate_soft_skills).\n  • Deduplicate terms; keep domain-agnostic where possible (prefer “experimental design” over brand-y phrasing when justified by evidence).\n- candidate_education: degrees/certifications explicitly present. If none, output [].\n- candidate_soft_skills: interpersonal/communication traits explicitly present. If none, output [].\n- meta: MUST be an object with at least { \"index\": <0-based position in batch> }. Additionally, IF AND ONLY IF these identifiers appear literally in the resume text, include any of:\n  { \"name\": \"...\", \"email\": \"...\", \"phone\": \"...\", \"linkedin\": \"...\", \"github\": \"...\", \"location\": \"...\", \"candidate_id\": \"...\" }\n  Do NOT invent values. Omit any key not explicitly present.\n\nBATCH DETECTION\n- If multiple resumes are present, return one object per resume in the SAME order.\n- Possible separators: <RESUME>…</RESUME> or <RESUME id=\"...\">…</RESUME>, lines consisting only of \"====\" or \"----\", XML/HTML-like blocks, or clear blank-line blocks.\n- If no clear separators are found, treat the entire content as ONE resume (array length 1).\n\nCONSERVATIVE INFERENCE GUARDRAILS\n- Never move soft skills into inferred/hidden lists.\n- Do not copy items from candidate_direct_skills into candidate_inferred_skills verbatim; inferred should be broader/umbrella capabilities supported by evidence (e.g., direct: “snowflake”, inferred: “data warehousing”).\n- When in doubt, exclude rather than guess.\n\nCONSTRAINTS\n- Do not include counts, scores, or IDs outside meta.\n- Do not use nulls; use [] for empty arrays and {} for an empty meta object (but it must at least contain \"index\").\n",
+              "role": "system"
+            },
+            {
+              "content": "=Content:\n<CANDIDATES>\n{{$json[\"Resume_text\"]}}\n</CANDIDATES>\n\nINSTRUCTIONS\n- Read ONLY the text inside <CANDIDATES>.\n- Detect multiple resumes if present and output one object per resume, preserving order.\n- Using the rules from the system message, return exactly ONE JSON array with ONE OR MORE objects. Each object MUST include:\n  candidate_direct_skills,\n  candidate_inferred_skills,\n  hidden_candidate_skills,     // NEW: with {term, rationale, evidence, confidence}\n  candidate_education,\n  candidate_soft_skills,\n  meta\n"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -464,
+        352
+      ],
+      "id": "e0a63902-96a8-453e-a172-e452d2b19d4c",
+      "name": "Message a model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "HEMykdMGRdeePESL",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mode: Run Once for All Items — JavaScript\n// Robust JSON extractor + \"N/A\" coercion + diagnostics\n// Updated to PRESERVE ARRAYS for skills, move soft skills to good_to_have,\n// and add JOB-AGNOSTIC keyword atomization for universal matching.\n\nconst NA = 'N/A';\nconst DROP_EMPTY_ROWS = false;\n\n// ---------- JSON extraction helpers ----------\nfunction stripCodeFences(s) {\n  return s.replace(/```(?:json)?/gi, '').replace(/```/g, '');\n}\nfunction stripPreamble(s) {\n  const firstBrace = s.indexOf('{');\n  const firstBracket = s.indexOf('[');\n  let idx = -1;\n  if (firstBrace === -1 && firstBracket === -1) return s;\n  if (firstBrace === -1) idx = firstBracket;\n  else if (firstBracket === -1) idx = firstBrace;\n  else idx = Math.min(firstBrace, firstBracket);\n  return s.slice(idx);\n}\nfunction replaceSmartQuotes(s) {\n  return s\n    .replace(/[\\u201C\\u201D\\u2033]/g, '\"')\n    .replace(/[\\u2018\\u2019\\u2032]/g, \"'\");\n}\nfunction unescapeIfQuotedJsonString(s) {\n  const t = String(s).trim();\n  const looksQuoted = (t.startsWith('\"') && t.endsWith('\"')) || (t.startsWith(\"'\") && t.endsWith(\"'\"));\n  if (!looksQuoted) return { ok:false };\n  try {\n    const once = JSON.parse(t);\n    if (typeof once === 'string') return { ok:true, value: once };\n    return { ok:false };\n  } catch { return { ok:false }; }\n}\nfunction tryParse(s) {\n  try { return { ok:true, value: JSON.parse(s) }; }\n  catch (e) { return { ok:false, error: e.message }; }\n}\nfunction extractJsonFromText(s) {\n  if (typeof s !== 'string') return { ok:false, why:'not_string' };\n  let txt = stripCodeFences(replaceSmartQuotes(s)).trim();\n  if (!txt.startsWith('{') && !txt.startsWith('[')) txt = stripPreamble(txt);\n\n  let p = tryParse(txt);\n  if (p.ok) return p;\n\n  const iBrace = txt.indexOf('{'), jBrace = txt.lastIndexOf('}');\n  if (iBrace !== -1 && jBrace !== -1 && jBrace > iBrace) {\n    p = tryParse(txt.slice(iBrace, jBrace + 1));\n    if (p.ok) return p;\n  }\n  const iBracket = txt.indexOf('['), jBracket = txt.lastIndexOf(']');\n  if (iBracket !== -1 && jBracket !== -1 && jBracket > iBracket) {\n    p = tryParse(txt.slice(iBracket, jBracket + 1));\n    if (p.ok) return p;\n  }\n\n  const unq = unescapeIfQuotedJsonString(txt);\n  if (unq.ok) {\n    const inner = stripCodeFences(replaceSmartQuotes(unq.value)).trim();\n    const inner2 = (!inner.startsWith('{') && !inner.startsWith('[')) ? stripPreamble(inner) : inner;\n    let q = tryParse(inner2);\n    if (q.ok) return q;\n    const ib = inner2.indexOf('{'), jb = inner2.lastIndexOf('}');\n    if (ib !== -1 && jb !== -1 && jb > ib) {\n      q = tryParse(inner2.slice(ib, jb + 1));\n      if (q.ok) return q;\n    }\n  }\n  return { ok:false, why:'json_not_found_or_invalid' };\n}\n\n// ---------- Coercion + normalization helpers ----------\nconst isEmptyStr = v => (typeof v === 'string' && v.trim() === '');\nfunction toNA(v) {\n  return (v === undefined || v === null || isEmptyStr(v)) ? NA : String(v);\n}\nfunction numOrNA(v) {\n  return (v === 0 || (typeof v === 'number' && !Number.isNaN(v))) ? v\n       : (v === null || v === undefined || v === '' ? NA : v);\n}\nfunction boolOrNA(v) { return (v === true || v === false) ? v : NA; }\n\n// Keep arrays (no join); split strings ONLY on , ; | and preserve spaces inside tokens\nfunction toArrayKeep(x) {\n  if (x == null) return [];\n  if (Array.isArray(x)) return x.map(s => String(s));\n  if (typeof x === 'object') return Object.values(x).map(String);\n  return String(x).split(/[;,|]/).map(s => s.trim()).filter(Boolean);\n}\n\n// Minimal, job-agnostic canonicalization (NO domain lists)\nconst CANON = {\n  'google tag management': 'google tag manager',\n  'google tag manager': 'google tag manager',\n  gtm: 'google tag manager',\n  'ms excel': 'excel',\n  'microsoft excel': 'excel',\n  ga4: 'google analytics',\n  'google analytics 4': 'google analytics'\n};\nfunction normSkill(s) {\n  const base = String(s).toLowerCase().trim()\n    .replace(/[()]/g, '')\n    .replace(/[_\\-]+/g, ' ')      // unify hyphen/underscore to space\n    .replace(/\\s+/g, ' ');\n  return CANON[base] || base;\n}\nfunction uniq(a) { return [...new Set((a || []).filter(Boolean))]; }\n\n// Soft skills detector (generic, NOT domain-specific)\nconst SOFT_RE = /\\b(communication|storytelling|collaboration|leadership|stakeholder(?: management)?|mentorship|coaching|team(?:\\s*)work|presentation|interpersonal)\\b/;\nfunction isSoftSkill(token) {\n  return SOFT_RE.test(String(token).toLowerCase());\n}\n\n// ---------- UNIVERSAL ATOMIZER v1 (job-agnostic) ----------\nconst STOP = new Set([\n  \"a\",\"an\",\"the\",\"and\",\"or\",\"of\",\"to\",\"in\",\"for\",\"with\",\"on\",\"as\",\"by\",\"from\",\"at\",\"into\",\n  \"such\",\"that\",\"this\",\"those\",\"these\",\"their\",\"our\",\"your\",\"his\",\"her\",\"its\",\"is\",\"are\",\n  \"be\",\"being\",\"been\",\"will\",\"shall\",\"may\",\"might\",\"can\",\"could\",\"should\",\"would\",\n  \"ability\",\"capable\",\"capability\",\"skills\",\"skill\",\"proficiency\",\"experience\",\n  \"experienced\",\"knowledge\",\"understanding\",\"familiarity\",\"proven\",\"track\",\"record\",\"using\",\n  \"use\",\"utilize\",\"including\",\"etc\",\"and/or\",\"per\",\"via\",\"across\",\"within\",\"about\"\n]);\n\nconst DELEADERS = [\n  /^(\\d+\\+?\\s*years?|years?)\\b.*?\\b(in|with|of)\\b\\s*/i,\n  /^(hands[-\\s]?on|strong|solid|deep|working)\\s+/i,\n  /^(proven|demonstrated)\\s+(ability|experience)\\s+(to|in|with)\\s+/i,\n  /^(ability|experience|knowledge|understanding)\\s+(to|of|with|in)\\s+/i\n];\n\nfunction cleanPhrase(s){\n  let t = String(s||\"\").toLowerCase().trim();\n  DELEADERS.forEach(re => t = t.replace(re,\"\"));\n  // keep tech punctuation; drop brackets/quotes\n  t = t.replace(/[\\u2018\\u2019'\"]/g,\"\")\n       .replace(/[()]/g,\" \")\n       .replace(/[,;]|\\/+/g,\" \")\n       .replace(/\\s+/g,\" \")\n       .trim();\n  return t;\n}\n\nfunction tokenize(s){\n  const words = s.split(/\\s+/).filter(w => w && !STOP.has(w));\n  return words;\n}\n\nfunction ngrams(words, maxN=3){\n  const out = [];\n  for (let n=1;n<=maxN;n++){\n    for (let i=0;i<=words.length-n;i++){\n      out.push(words.slice(i,i+n).join(\" \"));\n    }\n  }\n  return out;\n}\n\nfunction variants(atom){\n  const v = new Set();\n  const spaced = atom.trim();\n  if (!spaced) return [];\n  v.add(spaced);                          // \"bill of materials\"\n  v.add(spaced.replace(/-/g,\" \"));        // hyphen → space\n  v.add(spaced.replace(/[\\s-]/g,\"\"));     // collapse: \"billofmaterials\"\n  const letters = spaced.split(/\\s+/).map(w => w[0]).join(\"\");\n  if (letters.length >= 2) v.add(letters); // acronym \"bom\"\n  return Array.from(v);\n}\n\nfunction keepToken(t){\n  // keep if alnum len>=2, or contains techy chars or digits\n  return /[a-z0-9]/.test(t) && (t.length>=2 || /[#+.\\d]/.test(t));\n}\n\nfunction atomizeArray(arr){\n  const out = new Set();\n  for (const raw of (arr||[])){\n    const cleaned = cleanPhrase(raw);\n    if (!cleaned) continue;\n    const toks = tokenize(cleaned);\n    const grams = ngrams(toks, 3);\n    for (const g of grams){\n      for (const v of variants(g)){\n        const t = v.replace(/\\s+/g,\" \").trim();\n        if (keepToken(t)) out.add(t);\n      }\n    }\n  }\n  return Array.from(out);\n}\n\n// ---------- Contract coerce ----------\nfunction coerceRecord(obj) {\n  let rec = obj;\n\n  if (rec?.message?.content && typeof rec.message.content === 'string') {\n    const parsed = extractJsonFromText(rec.message.content);\n    if (parsed.ok) rec = parsed.value;\n    else return { rec:null, reason: 'parse_failed_message.content:'+parsed.why };\n  } else if (typeof rec?.content === 'string') {\n    const parsed = extractJsonFromText(rec.content);\n    if (parsed.ok) rec = parsed.value;\n    else return { rec:null, reason: 'parse_failed_content:'+parsed.why };\n  } else if (rec && typeof rec === 'object') {\n    // ok\n  } else {\n    return { rec:null, reason:'no_payload' };\n  }\n\n  const keys = [\n    'job_id','job_number','company','department','job_title',\n    'location_city','location_state_province','location_country',\n    'remote','min_year_req','required_skills','good_to_have',\n    'raw_json','njd_must_have_skills','njd_nice_to_have_skills','njd_tools_and_tech'\n  ];\n  const hasAny = keys.some(k => Object.prototype.hasOwnProperty.call(rec, k));\n  if (!hasAny) return { rec:null, reason:'missing_contract_keys' };\n\n  return { rec, reason:'ok' };\n}\n\n// ---------- Main ----------\nconst rows = [];\n\nfor (const it of items) {\n  const j = it.json ?? {};\n  const { rec, reason } = coerceRecord(j);\n\n  if (!rec) {\n    const row = {\n      __status: 'empty',\n      __reason: reason,\n\n      job_id: NA, job_number: NA, company: NA, department: NA, job_title: NA,\n      location_city: NA, location_state_province: NA, location_country: NA,\n      remote: NA, date_posted: NA, pay_currency: NA, pay_min: NA, pay_max: NA, pay_period: NA,\n      min_year_req: NA, required_education: NA, preferred_education: NA, role_level: NA,\n\n      // arrays\n      required_skills: [],\n      required_qualifications: [],\n      responsibilities: [],\n      good_to_have: [],\n\n      // njd block\n      njd_remote_policy: NA, njd_onsite_requirement: NA, njd_onsite_offices: [],\n      njd_employment_type: NA, njd_comp_currency: NA, njd_comp_min: NA, njd_comp_max: NA,\n      njd_comp_period: NA, njd_comp_structure_notes: [],\n      njd_years_experience_min: NA,\n      njd_must_have_skills: [], njd_nice_to_have_skills: [], njd_tools_and_tech: [], njd_domain_experience: [],\n      njd_benefits: [], njd_keywords: [], njd_eq_eo_statement: NA,\n\n      // NEW keywords (empty on error)\n      njd_required_keywords: [],\n      njd_preferred_keywords: [],\n\n      __hard_required_ok: false,\n      __missing_required: 'company | job_title | required_skills'\n    };\n    if (!DROP_EMPTY_ROWS) rows.push({ json: row });\n    continue;\n  }\n\n  const njd = rec?.raw_json?.normalized_jd ?? {};\n\n  // ---- skills as arrays, normalized, deduped; spaces preserved ----\n  let required_skills_arr = uniq(\n    toArrayKeep(rec.required_skills ?? rec.njd_must_have_skills ?? njd.must_have_skills).map(normSkill)\n  );\n  let good_to_have_arr = uniq(\n    toArrayKeep(rec.good_to_have ?? rec.njd_nice_to_have_skills ?? njd.nice_to_have_skills).map(normSkill)\n  );\n  const tools_and_tech_arr = uniq(\n    toArrayKeep(rec.tools_and_tech ?? rec.njd_tools_and_tech ?? njd.tools_and_tech).map(normSkill)\n  );\n\n  // ---- RE-BUCKET: move obvious soft skills out of required into good_to_have (generic) ----\n  const softInRequired = required_skills_arr.filter(isSoftSkill);\n  if (softInRequired.length) {\n    required_skills_arr = required_skills_arr.filter(s => !isSoftSkill(s));\n    good_to_have_arr = uniq(good_to_have_arr.concat(softInRequired));\n  }\n\n  // Optional cap to keep required concise\n  if (required_skills_arr.length > 20) {\n    required_skills_arr = required_skills_arr.slice(0, 20);\n  }\n\n  // ---- NEW: job-agnostic keyword atoms (for universal matching) ----\n  const required_keywords = atomizeArray(\n    required_skills_arr.length ? required_skills_arr : toArrayKeep(rec.required_qualifications)\n  );\n  const preferred_keywords = atomizeArray(good_to_have_arr);\n\n  // ----- Row build -----\n  const row = {\n    __status: 'ok',\n    __reason: reason,\n\n    job_id: toNA(rec.job_id ?? rec.id ?? rec.jobid),\n    job_number: toNA(rec.job_number),\n    company: toNA(rec.company),\n    department: toNA(rec.department),\n    job_title: toNA(rec.job_title ?? rec.title),\n    location_city: toNA(rec.location_city ?? rec.city),\n    location_state_province: toNA(rec.location_state_province ?? rec.state),\n    location_country: toNA(rec.location_country ?? rec.country),\n    remote: boolOrNA(rec.remote),\n    date_posted: toNA(rec.date_posted),\n    pay_currency: toNA(rec.pay_currency),\n    pay_min: numOrNA(rec.pay_min),\n    pay_max: numOrNA(rec.pay_max),\n    pay_period: toNA(rec.pay_period),\n    min_year_req: numOrNA(rec.min_year_req ?? rec.njd_years_experience_min),\n    required_education: toNA(rec.required_education),\n    preferred_education: toNA(rec.preferred_education),\n    role_level: toNA(rec.role_level),\n\n    // arrays preserved\n    required_skills: required_skills_arr,\n    required_qualifications: toArrayKeep(rec.required_qualifications),\n    responsibilities: toArrayKeep(rec.responsibilities),\n    good_to_have: good_to_have_arr,\n\n    // njd block (keep arrays where applicable)\n    njd_remote_policy: toNA(njd?.location?.remote_policy ?? rec.njd_remote_policy),\n    njd_onsite_requirement: toNA(njd?.location?.onsite_requirement ?? rec.njd_onsite_requirement),\n    njd_onsite_offices: toArrayKeep(njd?.location?.onsite_offices ?? rec.njd_onsite_offices),\n\n    njd_employment_type: toNA(njd?.employment?.type ?? rec.njd_employment_type),\n    njd_comp_currency: toNA(njd?.employment?.pay_currency ?? rec.njd_comp_currency),\n    njd_comp_min: numOrNA(njd?.employment?.pay_min ?? rec.njd_comp_min),\n    njd_comp_max: numOrNA(njd?.employment?.pay_max ?? rec.njd_comp_max),\n    njd_comp_period: toNA(njd?.employment?.pay_period ?? rec.njd_comp_period),\n    njd_comp_structure_notes: toArrayKeep(njd?.employment?.comp_structure_notes ?? rec.njd_comp_structure_notes),\n\n    njd_years_experience_min: numOrNA(njd?.years_experience_min ?? rec.njd_years_experience_min),\n\n    njd_must_have_skills: required_skills_arr,           // mirror for compatibility\n    njd_nice_to_have_skills: good_to_have_arr,\n    njd_tools_and_tech: tools_and_tech_arr,\n    njd_domain_experience: toArrayKeep(njd?.domain_experience ?? rec.njd_domain_experience),\n\n    njd_benefits: toArrayKeep(njd?.benefits ?? rec.njd_benefits),\n\n    // refreshed: union of atoms + tools (ensures matchable keywords)\n    njd_keywords: uniq([\n      ...required_keywords,\n      ...preferred_keywords,\n      ...tools_and_tech_arr\n    ]),\n\n    // NEW fields\n    njd_required_keywords: required_keywords,\n    njd_preferred_keywords: preferred_keywords,\n\n    njd_eq_eo_statement: toNA(njd?.eq_eo_statement ?? rec.njd_eq_eo_statement)\n  };\n\n  const missingRequired = [];\n  if (row.company === NA) missingRequired.push('company');\n  if (row.job_title === NA) missingRequired.push('job_title');\n  if (!row.required_skills.length) missingRequired.push('required_skills');\n  row.__hard_required_ok = missingRequired.length === 0;\n  row.__missing_required = missingRequired.length ? missingRequired.join(' | ') : '';\n\n  rows.push({ json: row });\n}\n\nreturn rows;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        128
+      ],
+      "id": "cf28c6f1-6811-43e8-acca-232d0265e43f",
+      "name": "Normalized_JD",
+      "executeOnce": false,
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * normalize_cand — Candidate LLM Output Validator & Normalizer (n8n Function/Code node)\n * Works in BOTH modes: Run Once for All Items or Run Once for Each Item.\n * - Robustly extracts a JSON ARRAY from LLM outputs (message.content, choices[0].message.content, etc.)\n * - Emits normalized cand_* fields for downstream logic\n * - Adds candidate_direct_skills, candidate_inferred_skills, candidate_education, candidate_soft_skills (arrays)\n * - Removes soft-skill bleed from inferred (inferred -= soft)\n * - Preserves upstream fields (non-destructive) and promotes meta identifiers\n * - Keeps cand_skills for backward compatibility (union of direct+inferred)\n */\n\nconst PRESERVE_UPSTREAM = true; // keep all existing item.json fields (non-destructive merge)\n\n// ---------------- allowed keys (extended, but keeps your original) ----------------\nconst ALLOWED_KEYS = [\n  // legacy/base fields (kept for compatibility)\n  \"name\",\"email\",\"phone\",\n  \"location_city\",\"location_state_province\",\"location_country\",\n  \"remote\",\"total_years_experience\",\"highest_degree\",\n  \"latest_title\",\"latest_company\",\n  \"skills_text\",\"titles\",\"achievements\",\n  \"raw_json\",\n\n  // normalized fields used downstream\n  \"cand_name\",\"cand_email\",\n  \"cand_location_city\",\"cand_location_state_province\",\"cand_location_country\",\n  \"cand_remote\",\"cand_total_years_experience\",\"cand_experience_level\",\n  \"cand_skills\",\n\n  // NEW: explicit arrays & meta + promoted identifiers\n  \"candidate_direct_skills\",\"candidate_inferred_skills\",\"candidate_education\",\"candidate_soft_skills\",\n  \"meta\",\"cand_index\",\n  \"candidate_id\",\"candidate_email\",\"candidate_phone\",\"candidate_name\",\n  \"candidate_linkedin\",\"candidate_github\",\"candidate_location\"\n];\n\n// ---------------- helpers: parsing & cleanup ----------------\nfunction stripCodeFences(s){ return s.replace(/```(?:json)?/gi,'').replace(/```/g,''); }\nfunction replaceSmartQuotes(s){ return s.replace(/[\\u201C\\u201D\\u2033]/g,'\"').replace(/[\\u2018\\u2019\\u2032]/g,\"'\"); }\nfunction stripPreamble(s){\n  const i1=s.indexOf('['), i2=s.indexOf('{'); let idx=-1;\n  if(i1===-1 && i2===-1) return s;\n  if(i1===-1) idx=i2; else if(i2===-1) idx=i1; else idx=Math.min(i1,i2);\n  return s.slice(idx);\n}\nfunction tryParse(s){ try{ return {ok:true, value: JSON.parse(s)} }catch(e){ return {ok:false, error:e.message} } }\nfunction unescapeIfQuotedJsonString(s){\n  const t=String(s).trim();\n  const looksQuoted=(t.startsWith('\"')&&t.endsWith('\"'))||(t.startsWith(\"'\")&&t.endsWith(\"'\"));\n  if(!looksQuoted) return {ok:false};\n  try{ const once=JSON.parse(t); if(typeof once==='string') return {ok:true, value: once}; return {ok:false}; }\n  catch{ return {ok:false}; }\n}\nfunction extractJsonArray(s){\n  if(typeof s!=='string') return {ok:false, why:'not_string'};\n  let txt=stripCodeFences(replaceSmartQuotes(s)).trim();\n  if(!txt.startsWith('[') && !txt.startsWith('{')) txt=stripPreamble(txt);\n\n  // direct parse\n  let p=tryParse(txt);\n  if(p.ok) return Array.isArray(p.value) ? {ok:true, value:p.value} : {ok:false, why:'not_array'};\n\n  // crop to outermost array\n  const i=txt.indexOf('['), j=txt.lastIndexOf(']');\n  if(i!==-1 && j!==-1 && j>i){\n    p=tryParse(txt.slice(i,j+1));\n    if(p.ok) return Array.isArray(p.value) ? {ok:true, value:p.value} : {ok:false, why:'not_array'};\n  }\n\n  // quoted JSON string containing array\n  const unq=unescapeIfQuotedJsonString(txt);\n  if(unq.ok){\n    const inner=stripCodeFences(replaceSmartQuotes(unq.value)).trim();\n    const inner2=(!inner.startsWith('[')&&!inner.startsWith('{'))?stripPreamble(inner):inner;\n    let q=tryParse(inner2);\n    if(q.ok) return Array.isArray(q.value) ? {ok:true, value:q.value} : {ok:false, why:'not_array'};\n    const i2=inner2.indexOf('['), j2=inner2.lastIndexOf(']');\n    if(i2!==-1 && j2!==-1 && j2>i2){\n      q=tryParse(inner2.slice(i2,j2+1));\n      if(q.ok) return Array.isArray(q.value) ? {ok:true, value:q.value} : {ok:false, why:'not_array'};\n    }\n  }\n  return {ok:false, why:'json_array_not_found'};\n}\n\nfunction isNullish(v){ return v===null || v===undefined; }\nfunction passStringOrNull(v){ if(isNullish(v)) return null; const s=String(v).trim(); return s===''?null:s; }\nfunction toLowerNoWhitespaceEmail(v){\n  if(isNullish(v)) return null;\n  const s=String(v).toLowerCase().replace(/[\\s\\r\\n\\u00A0\\u200B\\u200C\\u200D\\u2028\\u2029\\uFEFF]/g,'');\n  return s.includes('@') ? s : null;\n}\nfunction toBoolOrNull(v){\n  if(v===true||v===false) return v;\n  if(isNullish(v)) return null;\n  const s=String(v).trim().toLowerCase();\n  if(s==='true' || s==='yes' || s==='hybrid') return true;\n  if(s==='false' || s==='no' || s==='onsite' || s==='office') return false;\n  return null;\n}\nfunction toNumOrNull(v){\n  if(isNullish(v) || v==='') return null;\n  if(typeof v==='number' && !Number.isNaN(v)) return v;\n  const m=String(v).match(/-?\\d+(\\.\\d+)?/);\n  return m ? parseFloat(m[0]) : null;\n}\nfunction ensureString(v, joiner=', '){\n  if(isNullish(v)) return '';\n  if(Array.isArray(v)){\n    const clean=v.map(x=>String(x).trim()).filter(x=>x!=='');\n    return clean.join(joiner);\n  }\n  return String(v);\n}\nfunction onlyAllowedKeys(obj){\n  const out={};\n  for(const k of ALLOWED_KEYS){ if(Object.prototype.hasOwnProperty.call(obj,k)) out[k]=obj[k]; }\n  return out;\n}\n\n// ---------------- skills normalization ----------------\nfunction toArrayKeep(x){\n  if (x == null) return [];\n  if (Array.isArray(x)) return x.map(String);\n  if (typeof x === 'object') return Object.values(x).map(String);\n  return String(x).split(/[;,|]/).map(s=>s.trim()).filter(Boolean);\n}\nconst CANON = {\n  'google tag management': 'google tag manager',\n  'google tag manager': 'google tag manager',\n  gtm: 'google tag manager',\n  'ms excel': 'excel',\n  'microsoft excel': 'excel',\n  'ga4': 'google analytics',\n  'google analytics 4': 'google analytics',\n  'sql server': 'sql'\n};\nfunction normSkill(s){\n  const base = String(s).toLowerCase().trim()\n    .replace(/[()]/g,'')\n    .replace(/[_\\-]+/g,' ')\n    .replace(/\\s+/g,' ');\n  return CANON[base] || base;\n}\nfunction uniq(a){ return [...new Set((a||[]).filter(Boolean))]; }\n\n// Soft skills detector (generic)\nconst SOFT_RE = /\\b(communication|storytelling|collaboration|leadership|stakeholder(?: management)?|mentorship|coaching|team(?:\\s*)work|presentation|interpersonal)\\b/;\nfunction isSoftSkill(token){ return SOFT_RE.test(String(token).toLowerCase()); }\n\n// ---------------- level inference ----------------\nfunction inferLevel(years){\n  const y = Number(years)||0;\n  if (y >= 10) return 'lead';\n  if (y >= 6)  return 'senior';\n  if (y >= 3)  return 'mid';\n  return 'junior';\n}\n\n// ---------------- LLM text resolver ----------------\nfunction resolveLlmText(payload){\n  const direct = ['text','content','data','body','output'];\n  for (const k of direct){ if (typeof payload[k] === 'string' && payload[k].trim() !== '') return payload[k]; }\n  if (payload.message){\n    if (typeof payload.message.content === 'string' && payload.message.content.trim() !== '') return payload.message.content;\n    if (Array.isArray(payload.message.content)){\n      const parts = payload.message.content.map(p => {\n        if (typeof p === 'string') return p;\n        if (p && typeof p.text === 'string') return p.text;\n        if (p && typeof p.content === 'string') return p.content;\n        return '';\n      }).filter(Boolean);\n      if (parts.length) return parts.join('\\n');\n    }\n  }\n  if (payload.choices && Array.isArray(payload.choices) && payload.choices[0]?.message?.content){\n    return payload.choices[0].message.content;\n  }\n  return null;\n}\n\n// ---------------- record normalizer ----------------\nfunction normalizeRecord(r, fallbackIndex){\n  // meta (may contain identifiers and index)\n  const meta = (r && typeof r.meta === 'object' && r.meta !== null) ? { ...r.meta } : {};\n  if (typeof meta.index !== 'number') meta.index = (typeof fallbackIndex === 'number') ? fallbackIndex : 0;\n\n  // base fields from LLM (legacy compatibility)\n  const base = {\n    name: passStringOrNull(r.name ?? meta.name),\n    email: toLowerNoWhitespaceEmail(r.email ?? meta.email),\n    phone: passStringOrNull(r.phone ?? meta.phone),\n\n    location_city: passStringOrNull(r.location_city ?? (meta.location || null)),\n    location_state_province: passStringOrNull(r.location_state_province),\n    location_country: passStringOrNull(r.location_country),\n\n    remote: toBoolOrNull(r.remote),\n    total_years_experience: toNumOrNull(r.total_years_experience),\n\n    highest_degree: (()=>{\n      const hd = (r.highest_degree==null? null : String(r.highest_degree).toLowerCase().trim());\n      if (hd===\"bachelor's\"||hd==='bachelors'||hd==='bachelor') return \"bachelor's\";\n      if (hd===\"master's\"||hd==='masters'||hd==='master') return \"master's\";\n      if (hd==='phd'||hd==='doctorate') return \"phd\";\n      return null;\n    })(),\n\n    latest_title: passStringOrNull(r.latest_title),\n    latest_company: passStringOrNull(r.latest_company),\n\n    skills_text: ensureString(r.skills_text, ', '),\n    titles: r.latest_title ? String(r.latest_title) : '',\n    achievements: ensureString(r.achievements, '; ')\n  };\n\n  // NEW explicit arrays from LLM (preferred)\n  const directLLM   = uniq(toArrayKeep(r.candidate_direct_skills).map(normSkill));\n  const inferredLLM = uniq(toArrayKeep(r.candidate_inferred_skills).map(normSkill));\n  const educationLLM= uniq(toArrayKeep(r.candidate_education).map(s => String(s).toLowerCase().trim()));\n  const softLLM     = uniq(toArrayKeep(r.candidate_soft_skills).map(normSkill));\n\n  // Remove soft-skill bleed from inferred and filter generic soft tokens\n  const softSet = new Set(softLLM);\n  const inferredClean = inferredLLM.filter(x => !softSet.has(x) && !isSoftSkill(x));\n\n  // Fallback skills if LLM didn't provide explicit arrays\n  const fallbackSources = [\n    ...(Array.isArray(r.skills) ? r.skills : []),\n    ...(Array.isArray(r.keywords) ? r.keywords : []),\n    ...toArrayKeep(r.skills_text)\n  ];\n  const fallbackSkills = uniq(fallbackSources.map(normSkill));\n\n  // Compose cand_skills for backward compatibility (union of direct + inferred; if empty, use fallback)\n  const cand_skills = uniq(\n    (directLLM.length || inferredClean.length) ? directLLM.concat(inferredClean) : fallbackSkills\n  );\n\n  // raw_json passthrough + cleanup (legacy)\n  const raw = (typeof r.raw_json === 'object' && r.raw_json !== null) ? { ...r.raw_json } : {};\n  if (raw.email) raw.email = toLowerNoWhitespaceEmail(raw.email);\n  if (raw.remote !== undefined) raw.remote = toBoolOrNull(raw.remote);\n  if (typeof raw.location_country === 'string' && raw.location_country.trim()==='') raw.location_country = null;\n\n  // normalized cand_* keys used downstream\n  const cand_total_years_experience =\n    base.total_years_experience != null ? base.total_years_experience\n    : toNumOrNull(raw.total_years_experience);\n\n  const cand_experience_level =\n    (typeof r.cand_experience_level === 'string' && r.cand_experience_level) ?\n      String(r.cand_experience_level).toLowerCase().trim()\n      : inferLevel(cand_total_years_experience);\n\n  // Build normalized record\n  const rec = {\n    ...base,\n    raw_json: raw,\n\n    cand_name: base.name,\n    cand_email: base.email,\n    cand_location_city: base.location_city,\n    cand_location_state_province: base.location_state_province,\n    cand_location_country: base.location_country,\n    cand_remote: base.remote,\n    cand_total_years_experience,\n    cand_experience_level,\n\n    // Backward-compat skills\n    cand_skills,\n\n    // NEW explicit arrays\n    candidate_direct_skills: directLLM,\n    candidate_inferred_skills: inferredClean,\n    candidate_education: educationLLM,\n    candidate_soft_skills: softLLM,\n\n    // meta + promoted identifiers\n    meta,\n    cand_index: meta.index\n  };\n\n  // Promote common identifiers from meta if present (non-invented)\n  if (meta.name && !rec.candidate_name)    rec.candidate_name = String(meta.name);\n  if (meta.email && !rec.candidate_email)  rec.candidate_email = toLowerNoWhitespaceEmail(meta.email);\n  if (meta.phone && !rec.candidate_phone)  rec.candidate_phone = String(meta.phone);\n  if (meta.linkedin && !rec.candidate_linkedin) rec.candidate_linkedin = String(meta.linkedin);\n  if (meta.github && !rec.candidate_github)     rec.candidate_github   = String(meta.github);\n  if (meta.location && !rec.candidate_location) rec.candidate_location = String(meta.location);\n  if (meta.candidate_id && !rec.candidate_id)   rec.candidate_id       = String(meta.candidate_id);\n\n  // only keep allowed keys (legacy contract)\n  const cleaned = onlyAllowedKeys(rec);\n  return cleaned;\n}\n\n// ---------------- main ----------------\nconst INPUT_ITEMS = (typeof items !== 'undefined' && Array.isArray(items)) ? items : [{ json: $json }];\nconst outItems = [];\n\nfor (const it of INPUT_ITEMS) {\n  const j = it.json ?? {};\n  const text = resolveLlmText(j);\n\n  if (text == null) {\n    const baseOut = PRESERVE_UPSTREAM ? { ...(it.json || {}) } : {};\n    outItems.push({ json: { ...baseOut, error: true, why: 'no_text_from_llm' } });\n    continue;\n  }\n\n  const parsed = extractJsonArray(text);\n  if (!parsed.ok) {\n    const baseOut = PRESERVE_UPSTREAM ? { ...(it.json || {}) } : {};\n    outItems.push({\n      json: {\n        ...baseOut,\n        error: true,\n        why: 'llm_output_not_json_array',\n        detail: parsed.why,\n        snippet: String(text).slice(0, 400)\n      }\n    });\n    continue;\n  }\n\n  const val = parsed.value;\n  for (let i = 0; i < val.length; i++) {\n    const r = val[i];\n    if (typeof r !== 'object' || r === null) {\n      const baseOut = PRESERVE_UPSTREAM ? { ...(it.json || {}) } : {};\n      outItems.push({ json: { ...baseOut, error: true, why: 'array_contains_non_object', value: r } });\n      continue;\n    }\n\n    const cleaned = normalizeRecord(r, i);\n\n    // Append warning for unknown keys in the LLM object (not upstream)\n    const unknown = Object.keys(r).filter(k => !ALLOWED_KEYS.includes(k));\n    if (unknown.length) cleaned._warning_unknown_keys_stripped = unknown.join(', ');\n\n    // Non-destructive: merge upstream fields unless disabled\n    const baseOut = PRESERVE_UPSTREAM ? { ...(it.json || {}) } : {};\n    // Avoid carrying giant raw fields if present\n    delete baseOut.message;\n    delete baseOut.content;\n    delete baseOut.data;\n    delete baseOut.resume_text;\n    delete baseOut.Resume_text;\n\n    outItems.push({ json: { ...baseOut, ...cleaned } });\n  }\n}\n\nreturn outItems;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        320
+      ],
+      "id": "2863f7c6-d388-49e1-8160-8b772455e97c",
+      "name": "Normalized_Cand"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "chatgpt-4o-latest",
+          "mode": "list",
+          "cachedResultName": "CHATGPT-4O-LATEST"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a STRICT JSON generator.\n\nOutput rules:\n- Output EXACTLY one JSON array of length 1 with a single JSON object.\n- No prose, no code fences, no logs, no wrapper fields.\n- Missing strings → \"\" ; missing arrays → [].\n- Arrays must be UNIQUE, LOWERCASED, space-preserving.\n- Temperature = 0 (deterministic).\n\nEcho policy (MANDATORY):\n- Always echo these identifiers exactly as provided in INPUT:\n  pair_id, job_number, job_title, company, candidate_email, candidate_name, candidate_phone\n\nSemantic adjustment policy:\n- You receive precomputed lists from the matcher:\n  req_dir, req_imp, cand_dir, cand_imp\n- Your job: (1) validate/adjust matches and (2) optionally add hidden items.\n- When you output **req_ai** and **cand_ai**, they MUST contain ONLY AI-added items\n  that are NOT already present in req_dir/req_imp (for req_ai) and cand_dir/cand_imp (for cand_ai).\n- Do NOT duplicate items across direct/implied/ai buckets.\n\nQuadrant reporting:\n- adjusted_lists: arrays of requirement matches by quadrant:\n  jd_direct_vs_cand_direct, jd_direct_vs_cand_implied, jd_implied_vs_cand_direct, jd_implied_vs_cand_implied.\n- adjusted_pairs: per-match objects: { req, matched_skill, source: \"cand_direct\"|\"cand_inferred\", quadrant }\n\nMissing:\n- missing_required_direct: requirements from req_dir with no valid match after your adjustment.\n- missing_required_implied: requirements from req_imp with no valid match after your adjustment.\n- missing_required_ai: requirements from req_ai with no valid match (rare; usually []).\n\nScoring labels:\n- match_label ∈ {\"strong\",\"moderate\",\"weak\"} (your judgment on overall quality)\n- decision ∈ {\"apply\",\"improve\"} (your judgment)\n\nKeep lists ≤5 for: top_strengths, blockers, weak_implied, recommended_actions.\n\nReturn exactly this shape:\n\n[\n  {\n    \"pair_id\": \"\",\n    \"job_number\": \"\",\n    \"job_title\": \"\",\n    \"company\": \"\",\n    \"candidate_email\": \"\",\n    \"candidate_name\": \"\",\n    \"candidate_phone\": \"\",\n\n    \"req_dir\": [],\n    \"req_imp\": [],\n    \"req_ai\": [],\n\n    \"cand_dir\": [],\n    \"cand_imp\": [],\n    \"cand_ai\": [],\n\n    \"adjusted_lists\": {\n      \"jd_direct_vs_cand_direct\": [],\n      \"jd_direct_vs_cand_implied\": [],\n      \"jd_implied_vs_cand_direct\": [],\n      \"jd_implied_vs_cand_implied\": []\n    },\n    \"adjusted_pairs\": [],\n\n    \"adjusted_counts\": {\n      \"jd_direct_vs_cand_direct_count\": 0,\n      \"jd_direct_vs_cand_implied_count\": 0,\n      \"jd_implied_vs_cand_direct_count\": 0,\n      \"jd_implied_vs_cand_implied_count\": 0\n    },\n\n    \"missing_required_direct\": [],\n    \"missing_required_implied\": [],\n    \"missing_required_ai\": [],\n\n    \"invalid_implied_matches\": [],\n    \"added_hidden_matches\": [],          // extra reqs you discovered (mirror req_ai)\n    \"recovered_missing_matches\": [],     // reqs you managed to recover via reinterpretation\n\n    \"match_label\": \"weak\",\n    \"decision\": \"improve\",\n    \"top_strengths\": [],\n    \"blockers\": [],\n    \"weak_implied\": [],\n    \"recommended_actions\": [],\n    \"confidence_pct\": 70,\n    \"rationale_short\": \"\"\n  }\n]\n",
+              "role": "system"
+            },
+            {
+              "content": "=You will receive a matcher payload and must adjust matches conservatively.\n\nINPUT (from matcher):\npair_id: {{$json.pair_id || ''}}\njob_number: {{$json.job_number || ''}}\njob_title: {{$json.job_title || ''}}\ncompany: {{$json.company || ''}}\n\ncandidate_email: {{$json.candidate_email || ''}}\ncandidate_name: {{$json.candidate_name || ''}}\ncandidate_phone: {{$json.candidate_phone || ''}}\n\nreq_dir: {{ JSON.stringify($json.required_skills_direct || $json.required_match_direct || []) }}\nreq_imp: {{ JSON.stringify($json.required_skills_implied || $json.required_match_implied || []) }}\nreq_ai:  {{ JSON.stringify($json.required_skills_ai || []) }}\n\ncand_dir: {{ JSON.stringify($json.candidate_skills_direct || $json.candidate_direct_skills || []) }}\ncand_imp: {{ JSON.stringify($json.candidate_skills_implied || $json.candidate_inferred_skills || []) }}\ncand_ai:  {{ JSON.stringify($json.candidate_skills_ai || []) }}\n\nRules recap:\n- Echo all identifiers.\n- req_ai and cand_ai must be AI-only additions (exclude anything already in the direct/implied lists).\n- Fill adjusted_lists, adjusted_pairs, adjusted_counts.\n- Fill missing_required_* arrays.\n- Keep top_strengths/blockers/weak_implied/recommended_actions ≤5.\n- Be conservative; no hallucinated tools.\n\nReturn exactly ONE array with ONE object, following the System schema.\n"
+            }
+          ]
+        },
+        "simplify": false,
+        "options": {
+          "temperature": 0,
+          "topP": 1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -32,
+        736
+      ],
+      "id": "512062cc-ec76-455a-bd79-06d6c9e21710",
+      "name": "Message a model2",
+      "credentials": {
+        "openAiApi": {
+          "id": "HEMykdMGRdeePESL",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combineBySql",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        240,
+        256
+      ],
+      "id": "ca151380-097e-42c2-89d6-5267f2dc8868",
+      "name": "Merge",
+      "notesInFlow": true,
+      "notes": "done"
+    },
+    {
+      "parameters": {
+        "jsCode": "// one_blub — single item in → single, well-shaped object out\nconst x = $json;\n\n// helpers\nconst asArr = v => Array.isArray(v) ? v : (v == null || v === \"\" ? [] : [String(v)]);\nconst pick = (...keys) => {\n  for (const k of keys) {\n    const v = x[k];\n    if (v !== undefined && v !== null && String(v).trim() !== \"\") return v;\n  }\n  return undefined;\n};\n\n// identifiers (with fallbacks)\nconst job_number   = pick(\"job_number\",\"njd_job_number\",\"jobNo\",\"jobno\",\"job\") || \"JD001\";\nconst job_title    = pick(\"job_title\",\"njd_job_title\",\"title\") || \"\";\nconst company      = pick(\"company\",\"njd_company\",\"employer\") || \"\";\n\nconst candidate_email = pick(\"candidate_email\",\"cand_email\",\"email\",\"contact_email\") || \"\";\nconst candidate_name  = pick(\"candidate_name\",\"cand_name\",\"name\",\"full_name\") || \"\";\nconst candidate_phone = pick(\"candidate_phone\",\"cand_phone\",\"phone\",\"mobile\",\"cell\",\"contact_phone\") || \"\";\n\nconst cand_index = (x.cand_index ?? 0);\n\n// stable pair id\nconst pair_id = x.pair_id || `${job_number}::${candidate_email || candidate_name || `idx_${cand_index}`}`;\n\n// build output (arrays passed through safely)\nreturn {\n  // IDs\n  pair_id,\n  job_number,\n  job_title,\n  company,\n\n  // Also expose short aliases for downstream nodes that expect cand_* keys\n  cand_email: candidate_email,\n  cand_name:  candidate_name,\n  cand_phone: candidate_phone,\n\n  // Canonical candidate identifiers\n  candidate_email,\n  candidate_name,\n  candidate_phone,\n\n  // JD (pass-through; matcher will normalize further)\n  required_skills:       asArr(pick(\"required_skills\",\"njd_required_skills\")),\n  good_to_have:          asArr(pick(\"good_to_have\",\"njd_good_to_have\")),\n  required_education:    pick(\"required_education\",\"njd_required_education\") || \"\",\n  preferred_education:   pick(\"preferred_education\",\"njd_preferred_education\") || \"\",\n\n  // Candidate (pass-through; matcher will normalize further)\n  candidate_direct_skills:   asArr(x.candidate_direct_skills),\n  candidate_inferred_skills: asArr(x.candidate_inferred_skills),\n  candidate_soft_skills:     asArr(x.candidate_soft_skills),\n  candidate_education:       asArr(x.candidate_education),\n\n  cand_index\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        912
+      ],
+      "id": "bd709421-3882-480f-b8c8-004ad5b0bc93",
+      "name": "one_blub"
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -944,
+        784
+      ],
+      "id": "61c3078a-5c00-494f-9c8d-aa8eb54902d3",
+      "name": "Loop Over Items",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Parse OA adjustment → single compact record (CSV-ready)\n * - Robustly parse OA JSON\n * - Echo identifiers; backfill from current item if OA omitted\n * - Enforce AI-only diffs: req_ai = req_ai \\ (req_dir ∪ req_imp); cand_ai = cand_ai \\ (cand_dir ∪ cand_imp)\n * - Map quadrant matches to final names\n * - Produce EXACTLY 30 columns with lists joined by \"; \"\n */\n\nconst inItem = $json;\n\n// ---------- helpers ----------\nfunction getAssistantText(j) {\n  if (typeof j === \"string\") return j;\n  if (typeof j?.content === \"string\") return j.content;\n  if (Array.isArray(j?.choices) && j.choices[0]?.message?.content) return j.choices[0].message.content;\n  if (j?.message?.content) return j.message.content;\n  return JSON.stringify(j);\n}\nfunction parseOneObject(txt) {\n  let s = String(txt || \"\").trim();\n  const m = s.match(/^\\s*```(?:json)?\\s*([\\s\\S]*?)\\s*```\\s*$/i);\n  if (m) s = m[1].trim();\n  let obj = null;\n  if (s.startsWith(\"{\")) obj = JSON.parse(s);\n  else {\n    const arr = JSON.parse(s);\n    obj = Array.isArray(arr) ? arr[0] : arr;\n  }\n  return obj || {};\n}\nconst norm = (v) => String(v).toLowerCase().trim();\nconst normArr = a => [...new Set((Array.isArray(a) ? a : []).map(v => norm(v)).filter(Boolean))];\nconst diff    = (a,b) => {\n  const B = new Set(normArr(b));\n  return normArr(a).filter(x => !B.has(x));\n};\nconst inter   = (a,b) => {\n  const B = new Set(normArr(b));\n  return normArr(a).filter(x => B.has(x));\n};\nconst join1 = (arr) => (Array.isArray(arr) ? Array.from(new Set(arr)).join(\"; \") : String(arr||\"\"));\nconst uniq  = (a) => Array.from(new Set((a||[]).filter(Boolean)));\n\n// ---------- parse OA ----------\nlet oa = {};\ntry {\n  oa = parseOneObject(getAssistantText(inItem.__openai_raw || inItem));\n} catch (e) {\n  oa = {};\n}\n\n// ---------- identifiers (echo + backfill) ----------\nlet pair_id   = oa.pair_id   || inItem.pair_id   || \"\";\nconst job_no    = oa.job_number|| inItem.job_number|| inItem.job_no || \"\";\nconst job_title = oa.job_title || inItem.job_title || \"\";\nconst company   = oa.company   || inItem.company   || \"\";\n\nconst cand_email= oa.candidate_email || inItem.candidate_email || inItem.cand_email || \"\";\nconst cand_name = oa.candidate_name  || inItem.candidate_name  || inItem.cand_name  || \"\";\nconst cand_phone= oa.candidate_phone || inItem.candidate_phone || inItem.cand_phone || \"\";\n\n// fallback for pair_id if missing: \"N/A::<email>\"\nif (!pair_id) pair_id = (cand_email ? `N/A::${cand_email}` : \"N/A::\");\n\n// ---------- buckets (normalize) ----------\nconst req_dir = normArr(oa.req_dir ?? inItem.required_skills_direct ?? inItem.required_match_direct ?? []);\nconst req_imp = normArr(oa.req_imp ?? inItem.required_skills_implied ?? inItem.required_match_implied ?? []);\nlet   req_ai  = normArr(oa.req_ai  ?? inItem.required_skills_ai ?? []);\n\nconst cand_dir = normArr(oa.cand_dir ?? inItem.candidate_skills_direct ?? inItem.candidate_direct_skills ?? []);\nconst cand_imp = normArr(oa.cand_imp ?? inItem.candidate_skills_implied ?? inItem.candidate_inferred_skills ?? []);\nlet   cand_ai  = normArr(oa.cand_ai  ?? inItem.candidate_skills_ai ?? []);\n\n// Enforce AI-only (no duplication with existing buckets)\nconst req_base  = uniq([...req_dir, ...req_imp]);\nconst cand_base = uniq([...cand_dir, ...cand_imp]);\nreq_ai  = diff(req_ai,  req_base);\ncand_ai = diff(cand_ai, cand_base);\n\n// Quadrant-adjusted lists (if OA provided; not strictly required for final columns)\nconst al = oa.adjusted_lists || {};\nconst jd_dd = normArr(al.jd_direct_vs_cand_direct || []);\nconst jd_di = normArr(al.jd_direct_vs_cand_implied || []);\nconst ji_dd = normArr(al.jd_implied_vs_cand_direct || []);\nconst ji_di = normArr(al.jd_implied_vs_cand_implied || []);\n\n// Missing (OA view, keep normalized)\nconst miss_req_dir = normArr(oa.missing_required_direct || []);\nconst miss_req_imp = normArr(oa.missing_required_implied || []);\nconst miss_req_ai  = normArr(oa.missing_required_ai || []);\n\n// Counts (source arrays — normalized)\nconst req_dir_cnt = req_dir.length;\nconst req_imp_cnt = req_imp.length;\nconst req_ai_cnt  = req_ai.length;\nconst cand_dir_cnt= cand_dir.length;\nconst cand_imp_cnt= cand_imp.length;\nconst cand_ai_cnt = cand_ai.length;\n\n// Matches (3×3 grid, normalized)\nconst match_dir_dir = inter(req_dir,  cand_dir);\nconst match_dir_imp = inter(req_dir,  cand_imp);\nconst match_dir_ai  = inter(req_dir,  cand_ai);\n\nconst match_imp_dir = inter(req_imp,  cand_dir);\nconst match_imp_imp = inter(req_imp,  cand_imp);\nconst match_imp_ai  = inter(req_imp,  cand_ai);\n\nconst match_ai_dir  = inter(req_ai,  cand_dir);\nconst match_ai_imp  = inter(req_ai,  cand_imp);\nconst match_ai_ai   = inter(req_ai,  cand_ai);\n\n// Missing required (union, normalized)\nconst miss_req_ = uniq([...miss_req_dir, ...miss_req_imp, ...miss_req_ai]);\n\n// ---------- wilg_score (use upstream if present; else fallback quick compute) ----------\nlet wilg_score = inItem.wilg_score ?? oa.wilg_score;\nif (wilg_score == null) {\n  const W_REQ_DIR=3.0, W_REQ_IMP=1.0, W_PREF_DIR=1.0, W_PREF_IMP=0.5, EDU_PENALTY=3.0;\n\n  const req_dir_hits = match_dir_dir.length;\n  const req_imp_hits = match_dir_imp.length + match_dir_ai.length;\n  const pref_hits    = match_imp_dir.length + match_imp_imp.length + match_imp_ai.length;\n\n  const req_possible = Math.max(1, req_dir.length); // avoid /0\n  const base = (req_dir_hits*W_REQ_DIR) + (req_imp_hits*W_REQ_IMP)\n             + Math.min(pref_hits*W_PREF_DIR, 0.25*req_possible); // cap preferred at 25% req\n\n  // simple education penalty if JD wants education and candidate has none\n  const jd_req_edu = (oa.required_education || inItem.required_education || \"\").trim();\n  const cand_edu   = normArr(oa.candidate_education || inItem.candidate_education || []);\n  const penalty = (jd_req_edu && cand_edu.length === 0) ? EDU_PENALTY : 0;\n\n  wilg_score = Math.max(0, Math.min(100, Math.round(100 * (base - penalty) / (req_possible*W_REQ_DIR + 0.25*req_possible))));\n}\n\n// ---------- FINAL: EXACT 30 columns (lists joined as single strings) ----------\nconst row = {\n  pair_id,\n  job_no,\n  job_title,\n  company,\n  cand_email,\n  cand_name,\n  cand_phone,\n\n  req_dir:  join1(req_dir),\n  req_imp:  join1(req_imp),\n  req_ai:   join1(req_ai),\n\n  cand_dir: join1(cand_dir),\n  cand_imp: join1(cand_imp),\n  cand_ai:  join1(cand_ai),\n\n  req_dir_cnt,\n  req_imp_cnt,\n  req_ai_cnt,\n  cand_dir_cnt,\n  cand_imp_cnt,\n  cand_ai_cnt,\n\n  // (match_label intentionally omitted to keep total at 30)\n  miss_req_: join1(miss_req_),\n\n  match_dir_dir: join1(match_dir_dir),\n  match_dir_imp: join1(match_dir_imp),\n  match_dir_ai:  join1(match_dir_ai),\n\n  match_imp_dir: join1(match_imp_dir),\n  match_imp_imp: join1(match_imp_imp),\n  match_imp_ai:  join1(match_imp_ai),\n\n  match_ai_dir:  join1(match_ai_dir),\n  match_ai_imp:  join1(match_ai_imp),\n  match_ai_ai:   join1(match_ai_ai),\n\n  wilg_score\n};\n\nreturn [{ json: row }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        816
+      ],
+      "id": "b8d43ae9-155e-4f8b-8164-86cfd858a06b",
+      "name": "Parse Node"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        -720,
+        656
+      ],
+      "id": "29564ca8-60e2-46b1-9b3d-294e6ee9cfed",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node — Run Once for Each Item\n// Summarize → CSV-ready row (EXACTLY 30 columns)\n// - Accepts array fields OR semicolon-joined strings from the previous step\n// - Enforces disjoint tiers: imp \\= dir; ai \\= (dir ∪ imp) for BOTH JD and candidate\n// - Rebuilds 3×3 match grid + missing sets\n// - Outputs 30 columns (lists joined with \"; \"); match_label intentionally omitted to keep 30\n\nconst row = $json;\n\n// ---------- helpers ----------\nconst norm = s => String(s || \"\").toLowerCase().trim();\n\nfunction parseList(v){\n  if (Array.isArray(v)) return v.map(norm).filter(Boolean);\n  if (v == null) return [];\n  // accept strings like \"a; b; c\"\n  return String(v).split(/\\s*;\\s*/).map(norm).filter(Boolean);\n}\nconst uniq = a => Array.from(new Set((a||[]).filter(Boolean)));\nconst diff = (a,b) => {\n  const B = new Set((b||[]).map(norm));\n  return uniq((a||[]).map(norm).filter(x => !B.has(x)));\n};\nconst inter = (a,b) => {\n  const B = new Set((b||[]).map(norm));\n  return uniq((a||[]).map(norm).filter(x => B.has(x)));\n};\nconst join1 = arr => uniq(arr).join(\"; \");\n\nfunction prefer(...vals){\n  for (const v of vals){\n    if (v !== undefined && v !== null && String(v) !== \"\") return String(v);\n  }\n  return \"\";\n}\n\n// ---------- read inputs (tolerant to arrays or strings) ----------\nlet req_dir = parseList(row.req_dir);\nlet req_imp = parseList(row.req_imp);\nlet req_ai  = parseList(row.req_ai);\n\nlet cand_dir = parseList(row.cand_dir);\nlet cand_imp = parseList(row.cand_imp);\nlet cand_ai  = parseList(row.cand_ai);\n\n// If short match bucket names exist (from older step), read them, else derive later.\nlet m_rd_cd  = parseList(row.m_rd_cd);\nlet m_rd_ci  = parseList(row.m_rd_ci);\nlet m_rd_cai = parseList(row.m_rd_cai);\n\nlet m_ri_cd  = parseList(row.m_ri_cd);\nlet m_ri_ci  = parseList(row.m_ri_ci);\nlet m_ri_cai = parseList(row.m_ri_cai);\n\nlet m_rai_cd  = parseList(row.m_rai_cd);\nlet m_rai_ci  = parseList(row.m_rai_ci);\nlet m_rai_cai = parseList(row.m_rai_cai);\n\n// ---------- enforce disjoint tiers ----------\nreq_imp = diff(req_imp, req_dir);\nreq_ai  = diff(req_ai,  [...req_dir, ...req_imp]);\n\ncand_imp = diff(cand_imp, cand_dir);\ncand_ai  = diff(cand_ai,  [...cand_dir, ...cand_imp]);\n\n// ---------- rebuild matches if needed; then align to corrected tiers ----------\nconst needRebuild =\n  !m_rd_cd.length && !m_rd_ci.length && !m_rd_cai.length &&\n  !m_ri_cd.length && !m_ri_ci.length && !m_ri_cai.length &&\n  !m_rai_cd.length && !m_rai_ci.length && !m_rai_cai.length;\n\nif (needRebuild){\n  m_rd_cd  = inter(req_dir, cand_dir);\n  m_rd_ci  = inter(req_dir, cand_imp);\n  m_rd_cai = inter(req_dir, cand_ai);\n\n  m_ri_cd  = inter(req_imp, cand_dir);\n  m_ri_ci  = inter(req_imp, cand_imp);\n  m_ri_cai = inter(req_imp, cand_ai);\n\n  m_rai_cd  = inter(req_ai, cand_dir);\n  m_rai_ci  = inter(req_ai, cand_imp);\n  m_rai_cai = inter(req_ai, cand_ai);\n} else {\n  // Filter buckets to corrected tiers\n  m_rd_cd  = inter(m_rd_cd,  req_dir);\n  m_rd_ci  = inter(m_rd_ci,  req_dir);\n  m_rd_cai = inter(m_rd_cai, req_dir);\n\n  m_ri_cd  = inter(m_ri_cd,  req_imp);\n  m_ri_ci  = inter(m_ri_ci,  req_imp);\n  m_ri_cai = inter(m_ri_cai, req_imp);\n\n  m_rai_cd  = inter(m_rai_cd,  req_ai);\n  m_rai_ci  = inter(m_rai_ci,  req_ai);\n  m_rai_cai = inter(m_rai_cai, req_ai);\n}\n\n// ---------- recompute missing sets ----------\nconst miss_req_dir = diff(req_dir, [...m_rd_cd, ...m_rd_ci, ...m_rd_cai]);\nconst miss_req_imp = diff(req_imp, [...m_ri_cd, ...m_ri_ci, ...m_ri_cai]);\nconst miss_req_ai  = diff(req_ai,  [...m_rai_cd, ...m_rai_ci, ...m_rai_cai]);\n\nconst miss_req_union = uniq([...miss_req_dir, ...miss_req_imp, ...miss_req_ai]);\n\n// ---------- counts ----------\nconst req_dir_cnt  = req_dir.length;\nconst req_imp_cnt  = req_imp.length;\nconst req_ai_cnt   = req_ai.length;\nconst cand_dir_cnt = cand_dir.length;\nconst cand_imp_cnt = cand_imp.length;\nconst cand_ai_cnt  = cand_ai.length;\n\n// ---------- wilg_score (keep if provided; else fallback quick compute) ----------\nlet wilg_score = row.wilg_score;\nif (wilg_score == null || wilg_score === \"\") {\n  const W_REQ_DIR=3.0, W_REQ_IMP=1.0, W_PREF_DIR=1.0, W_PREF_IMP=0.5, EDU_PENALTY=3.0;\n\n  const req_dir_hits = m_rd_cd.length;\n  const req_imp_hits = m_rd_ci.length + m_rd_cai.length;\n\n  const pref_hits    = m_ri_cd.length + m_ri_ci.length + m_ri_cai.length;\n\n  const req_possible = Math.max(1, req_dir.length);\n  const base = (req_dir_hits*W_REQ_DIR) + (req_imp_hits*W_REQ_IMP)\n             + Math.min(pref_hits*W_PREF_DIR, 0.25*req_possible);\n\n  // education penalty if present in upstream fields\n  const jd_req_edu = prefer(row.required_education, row.req_education);\n  const cand_edu   = parseList(row.candidate_education);\n  const penalty = (jd_req_edu && cand_edu.length === 0) ? EDU_PENALTY : 0;\n\n  wilg_score = Math.max(0, Math.min(100, Math.round(100 * (base - penalty) / (req_possible*W_REQ_DIR + 0.25*req_possible))));\n}\n\n// ---------- identifiers ----------\nconst out = {\n  pair_id:    prefer(row.pair_id, (row.cand_email ? `N/A::${row.cand_email}` : \"N/A::\")),\n  job_no:     prefer(row.job_no, row.job_number),\n  job_title:  prefer(row.job_title, row.title),\n  company:    prefer(row.company),\n\n  cand_email: prefer(row.cand_email, row.candidate_email),\n  cand_name:  prefer(row.cand_name,  row.candidate_name),\n  cand_phone: prefer(row.cand_phone, row.candidate_phone),\n\n  // JD buckets (joined)\n  req_dir: join1(req_dir),\n  req_imp: join1(req_imp),\n  req_ai:  join1(req_ai),\n\n  // Candidate buckets (joined)\n  cand_dir: join1(cand_dir),\n  cand_imp: join1(cand_imp),\n  cand_ai:  join1(cand_ai),\n\n  // counts\n  req_dir_cnt,\n  req_imp_cnt,\n  req_ai_cnt,\n  cand_dir_cnt,\n  cand_imp_cnt,\n  cand_ai_cnt,\n\n  // NOTE: match_label intentionally omitted to keep total at 30\n  miss_req_: join1(miss_req_union),\n\n  // 3×3 match grid (joined)\n  match_dir_dir: join1(m_rd_cd),\n  match_dir_imp: join1(m_rd_ci),\n  match_dir_ai:  join1(m_rd_cai),\n\n  match_imp_dir: join1(m_ri_cd),\n  match_imp_imp: join1(m_ri_ci),\n  match_imp_ai:  join1(m_ri_cai),\n\n  match_ai_dir:  join1(m_rai_cd),\n  match_ai_imp:  join1(m_rai_ci),\n  match_ai_ai:   join1(m_rai_cai),\n\n  wilg_score\n};\n\nreturn [{ json: out }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        912
+      ],
+      "id": "5d786aeb-3217-4acf-95cd-a5e874618aff",
+      "name": "Summarize"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node: JD_Facts (deterministic, non-destructive, job-agnostic)\n// v4.0 — facts-only 2×2 matching, no domain heuristics, no scoring\n\nfunction arr(a){ return Array.isArray(a) ? a.slice() : []; }\nfunction norm(s){ return (s == null ? \"\" : String(s)).toLowerCase().trim().replace(/\\s+/g, \" \"); }\nfunction normArr(a){ return [...new Set(arr(a).map(norm).filter(Boolean))]; }\nfunction uniq(a){ return [...new Set(arr(a).filter(Boolean))]; }\nfunction toSet(a){ return new Set(uniq(a)); }\nfunction inter(a, b){ const sb = toSet(b); return uniq(a).filter(x => sb.has(x)); }\nfunction diff(a, b){ const sb = toSet(b); return uniq(a).filter(x => !sb.has(x)); }\n\nreturn items.map(item => {\n  const out = { ...(item.json || {}) };\n\n  // ---- Inputs (normalized, no mutation) ----\n  const jd_direct_req = normArr(out.required_skills);\n  // JD implied requirements, if produced upstream by JD AI normalizer:\n  let jd_implied_req = [];\n  try {\n    const hidden = out.raw_json?.normalized_jd?.hidden_required_skills || [];\n    jd_implied_req = normArr(hidden.map(h => h && h.term));\n  } catch (_) { /* ignore */ }\n\n  const cand_direct   = normArr(out.candidate_direct_skills);\n  const cand_implied  = normArr(out.candidate_inferred_skills);\n\n  // ---- 2×2 FACT QUADRANTS (no heuristics) ----\n  // JD direct × candidate direct\n  const dirReq_dirSkill = inter(jd_direct_req, cand_direct);\n\n  // JD direct × candidate implied (excluding those already matched via direct)\n  const dirReq_impSkill = diff(inter(jd_direct_req, cand_implied), dirReq_dirSkill);\n\n  // JD implied × candidate direct\n  const impReq_dirSkill = inter(jd_implied_req, cand_direct);\n\n  // JD implied × candidate implied (excluding those already matched via direct)\n  const impReq_impSkill = diff(inter(jd_implied_req, cand_implied), impReq_dirSkill);\n\n  // ---- Details for auditing (pure echoes of terms) ----\n  const facts_quadrants_details = {\n    jd_direct_vs_cand_direct: dirReq_dirSkill.map(req => ({ req, cand: req, match_type: 'direct↔direct', source: 'cand_direct' })),\n    jd_direct_vs_cand_implied: dirReq_impSkill.map(req => ({ req, cand: req, match_type: 'direct↔implied', source: 'cand_inferred' })),\n    jd_implied_vs_cand_direct: impReq_dirSkill.map(req => ({ req, cand: req, match_type: 'implied↔direct', source: 'cand_direct' })),\n    jd_implied_vs_cand_implied: impReq_impSkill.map(req => ({ req, cand: req, match_type: 'implied↔implied', source: 'cand_inferred' })),\n  };\n\n  // ---- Totals (simple counts only) ----\n  const facts_quadrants = {\n    jd_direct_vs_cand_direct_count:  dirReq_dirSkill.length,\n    jd_direct_vs_cand_implied_count: dirReq_impSkill.length,\n    jd_implied_vs_cand_direct_count: impReq_dirSkill.length,\n    jd_implied_vs_cand_implied_count:impReq_impSkill.length,\n    jd_direct_requirements_total:    jd_direct_req.length,\n    jd_implied_requirements_total:   jd_implied_req.length,\n    candidate_direct_total:          cand_direct.length,\n    candidate_implied_total:         cand_implied.length\n  };\n\n  // ---- Missing direct requirements (optional but useful)\n  const matched_direct_required = uniq(dirReq_dirSkill.concat(dirReq_impSkill));\n  const missing_direct_required = diff(jd_direct_req, matched_direct_required);\n\n  // ---- CSV-friendly flat string\n  const facts_quadrants_flat = [\n    `JDdir×Canddir=${facts_quadrants.jd_direct_vs_cand_direct_count}`,\n    `JDdir×Candimp=${facts_quadrants.jd_direct_vs_cand_implied_count}`,\n    `JDimp×Canddir=${facts_quadrants.jd_implied_vs_cand_direct_count}`,\n    `JDimp×Candimp=${facts_quadrants.jd_implied_vs_cand_implied_count}`\n  ].join(' | ');\n\n  // ---- Emit (non-destructive)\n  out.jd_direct_requirements         = jd_direct_req;          // echo normalized\n  out.jd_implied_requirements        = jd_implied_req;         // may be []\n  out.candidate_direct_normalized    = cand_direct;            // echo normalized\n  out.candidate_implied_normalized   = cand_implied;           // echo normalized\n\n  // Top-level JD requirement totals (for quick access / CSV)\n  out.jd_direct_requirements_total  = (out.jd_direct_requirements || []).length;   // = jd_direct_req.length\n  out.jd_implied_requirements_total = (out.jd_implied_requirements || []).length;  // = jd_implied_req.length\n\n\n  out.jd_direct_requirements_total  = jd_direct_req.length;\n  out.jd_implied_requirements_total = jd_implied_req.length;\n\n\n  out.facts_quadrants        = facts_quadrants;\n  out.facts_quadrants_details= facts_quadrants_details;\n  out.facts_quadrants_flat   = facts_quadrants_flat;\n\n  out.missing_direct_required        = missing_direct_required;\n  out.missing_direct_required_flat   = missing_direct_required.join(' | ');\n\n  out.__node = 'JD_Facts_v4.0'; // signature\n\n  return { json: out };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        912
+      ],
+      "id": "ba86744a-7612-45eb-8c90-b71fa0093c0a",
+      "name": "Matcher1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mode: Run Once for All Items — JavaScript\n// Collocation Guard + Generic Preferred Extractor (job-agnostic)\n\n// === 1) PROTECTED PHRASES (lowercase) ===\nconst PROTECTED = [\n  \"bill of materials\",\n  \"processing engineering change\",\n  \"processing manager\",\n];\n\n// Optional alias/typo → canonical (both lowercase)\nconst ALIASES = {\n  \"bill of material\": \"bill of materials\",\n  \"bom (bill of materials)\": \"bill of materials\",\n  \"prcessing engineering change\": \"processing engineering change\",\n};\n\n// --- Collocation helpers ---\nfunction escRe(s){ return s.replace(/[.*+?^${}()|[\\]\\\\]/g, \"\\\\$&\"); }\nfunction replaceAllCI(text, from, to){\n  if (!from) return text;\n  const re = new RegExp(escRe(from), \"gi\");\n  return text.replace(re, to);\n}\nfunction guardText(s){\n  if (s == null) return s;\n  let t = String(s);\n  // normalize aliases first\n  for (const [k,v] of Object.entries(ALIASES)) t = replaceAllCI(t, k, v);\n  // enforce canonical protected phrases (case-insensitive)\n  for (const p of PROTECTED) t = replaceAllCI(t, p, p);\n  return t;\n}\nfunction guardArray(arr){\n  if (!arr) return arr;\n  const list = Array.isArray(arr) ? arr : [arr];\n  const out = [];\n  for (const x of list){\n    const g = guardText(x);\n    if (g && !out.includes(g)) out.push(g);\n  }\n  return out;\n}\n\n// === 2) Generic preferred extractor (job-agnostic) ===\n// Ignore boilerplate like \"skills with\", \"experience in/with\", \"ability to\", etc.\nconst BP_PREFIX = new RegExp(\n  String.raw`\\b(?:skills?\\s+with|experience\\s+(?:in|with)|proficiency\\s+(?:in|with)|` +\n  String.raw`knowledge\\s+(?:of|in)|familiarity\\s+with|ability\\s+to|capab(?:le|ility)\\s+(?:of|to)|` +\n  String.raw`proven\\s+(?:ability|experience)\\s+(?:to|in)|demonstrated\\s+(?:ability|experience)\\s+(?:to|in))\\b`,\n  \"i\"\n);\n\n// Split lists like \"word, excel and tableau\"\nfunction splitList(s){\n  return String(s)\n    .split(/\\s*,\\s*|\\s+and\\s+|\\s*\\/\\s*/i)\n    .map(t => t.trim())\n    .filter(Boolean);\n}\n\n// Minimal canonicalizer (lowercase, trim, collapse spaces; you can expand later)\nfunction normSkill(s){\n  return String(s).toLowerCase().trim().replace(/\\s+/g,\" \");\n}\n\n// Very light verb→object hints: pull core nouns\nfunction verbObjectHint(s){\n  const m1 = /\\b(?:create|build|develop|maintain|track|report|analyz(?:e|ing|ed)|manage)\\b.*\\b(metrics?)\\b/i.exec(s);\n  if (m1) return [normSkill(m1[1])];         // → \"metrics\"\n  if (/\\bwork\\b.*\\bcross[-\\s]?functional(?:ly)?\\b/i.test(s)) return [\"cross functional\"];\n  return [];\n}\n\n// Strip boilerplate and extract tokens from one phrase\nfunction normalizePreferredPhrase(phrase){\n  let t = String(phrase || \"\").trim();\n  if (!t) return [];\n  t = t.replace(BP_PREFIX, \"\").trim();     // remove lead-in once\n  if (!t) return [];\n\n  const parts = splitList(t);\n  const out = new Set();\n\n  for (let p of parts){\n    p = p.replace(/^[\\s,;:-]+|[\\s,;:-]+$/g,\"\");\n    if (!p) continue;\n\n    // hints first\n    const hinted = verbObjectHint(p);\n    if (hinted.length){ hinted.forEach(x => out.add(x)); continue; }\n\n    // default: keep phrase/token as-is (after basic normalize)\n    out.add(normSkill(p));\n  }\n  return Array.from(out);\n}\n\n// --- main ---\nconst rows = [];\nfor (const it of items){\n  const j = it.json || {};\n\n  // 1) Collocation guard on common JD arrays\n  j.required_skills         = guardArray(j.required_skills);\n  j.good_to_have            = guardArray(j.good_to_have);\n  j.required_qualifications = guardArray(j.required_qualifications);\n  j.responsibilities        = guardArray(j.responsibilities);\n\n  // 2) Generic preferred extraction from good_to_have phrases\n  const extractedPreferred = new Set();\n  for (const gh of (Array.isArray(j.good_to_have) ? j.good_to_have : (j.good_to_have ? [j.good_to_have] : []))){\n    normalizePreferredPhrase(gh).forEach(tok => extractedPreferred.add(tok));\n  }\n\n  if (extractedPreferred.size){\n    const adds = Array.from(extractedPreferred);\n    // ensure arrays exist\n    if (!Array.isArray(j.good_to_have)) j.good_to_have = j.good_to_have ? [j.good_to_have] : [];\n    j.good_to_have = Array.from(new Set(j.good_to_have.concat(adds)));\n\n    // also surface as tools/tech if field present (or create it)\n    if (!Array.isArray(j.tools_and_tech)) j.tools_and_tech = [];\n    j.tools_and_tech = Array.from(new Set(j.tools_and_tech.concat(adds)));\n  }\n\n  // debug/visibility\n  j.njd_protected_terms = PROTECTED;\n  j.njd_preferred_extracted = Array.from(extractedPreferred);\n\n  rows.push({ json: j });\n}\nreturn rows;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        144
+      ],
+      "id": "2b0678a1-becd-4b8d-916c-91d2f8223503",
+      "name": "Collocation Guard"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node — Run Once for Each Item\n// WILG score = per-requirement average based on candidate tier that satisfied it\n// Weights: candidate DIRECT=100, IMPLIED=90, AI=85, missing=0\nconst W = { dir: 100, imp: 90, ai: 85, miss: 0 };\n\n// ---- helpers ----\nconst norm = (s) => String(s || \"\").toLowerCase().trim();\nfunction parseList(v){\n  if (Array.isArray(v)) return Array.from(new Set(v.map(norm).filter(Boolean)));\n  if (v == null || v === \"\") return [];\n  return Array.from(new Set(String(v).split(/\\s*;\\s*/).map(norm).filter(Boolean)));\n}\nfunction asSet(v){ return new Set(parseList(v)); }\nfunction firstPresent(obj, keys){\n  for (const k of keys){ if (obj[k] !== undefined) return obj[k]; }\n  return [];\n}\n\nreturn $input.all().map(({ json: row }) => {\n  // Required universes (support arrays or \"a; b; c\" strings)\n  const reqDir = parseList(row.req_dir);\n  const reqImp = parseList(row.req_imp);\n  const reqAI  = parseList(row.req_ai);\n  const reqAll = Array.from(new Set([...reqDir, ...reqImp, ...reqAI]));\n\n  // Quadrant sets — support short names (m_rd_cd) OR long names (match_dir_dir)\n  const m_rd_cd  = asSet(firstPresent(row, [\"m_rd_cd\",  \"match_dir_dir\"]));   // JD-direct × Cand-direct\n  const m_rd_ci  = asSet(firstPresent(row, [\"m_rd_ci\",  \"match_dir_imp\"]));   // JD-direct × Cand-implied\n  const m_rd_cai = asSet(firstPresent(row, [\"m_rd_cai\", \"match_dir_ai\"]));    // JD-direct × Cand-AI\n\n  const m_ri_cd  = asSet(firstPresent(row, [\"m_ri_cd\",  \"match_imp_dir\"]));   // JD-implied × Cand-direct\n  const m_ri_ci  = asSet(firstPresent(row, [\"m_ri_ci\",  \"match_imp_imp\"]));   // JD-implied × Cand-implied\n  const m_ri_cai = asSet(firstPresent(row, [\"m_ri_cai\", \"match_imp_ai\"]));    // JD-implied × Cand-AI\n\n  const m_rai_cd  = asSet(firstPresent(row, [\"m_rai_cd\",  \"match_ai_dir\"]));  // JD-AI × Cand-direct\n  const m_rai_ci  = asSet(firstPresent(row, [\"m_rai_ci\",  \"match_ai_imp\"]));  // JD-AI × Cand-implied\n  const m_rai_cai = asSet(firstPresent(row, [\"m_rai_cai\", \"match_ai_ai\"]));   // JD-AI × Cand-AI\n\n  // Candidate-tier precedence for credit\n  const candDirectMatched  = new Set([...m_rd_cd, ...m_ri_cd, ...m_rai_cd]);\n  const candImpliedMatched = new Set([...m_rd_ci, ...m_ri_ci, ...m_rai_ci]);\n  const candAIMatched      = new Set([...m_rd_cai, ...m_ri_cai, ...m_rai_cai]);\n\n  let sum = 0;\n  for (const req of reqAll) {\n    if (candDirectMatched.has(req))       sum += W.dir;\n    else if (candImpliedMatched.has(req)) sum += W.imp;\n    else if (candAIMatched.has(req))      sum += W.ai;\n    else                                  sum += W.miss;\n  }\n\n  const denom = reqAll.length || 1;\n  const wilg_score = Math.round(sum / denom);\n\n  // IMPORTANT: append ONLY wilg_score to avoid extra CSV columns\n  return { json: { ...row, wilg_score } };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        976
+      ],
+      "id": "9f866689-c5f8-4085-a43b-da89a6ccf6bf",
+      "name": "Wilg"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node: JD_Can_Cross (deterministic, non-destructive, job-agnostic)\n// v3: includes candidate_soft_skills for PREFERRED matching (source: 'cand_soft')\n\nfunction arr(a){ return Array.isArray(a) ? a.slice() : []; }\nfunction uniq(a){ return [...new Set(arr(a).filter(Boolean))]; }\nfunction toSet(a){ return new Set(uniq(a)); }\nfunction inter(a, b){ const sb = toSet(b); return uniq(a).filter(x => sb.has(x)); }\nfunction diff(a, b){ const sb = toSet(b); return uniq(a).filter(x => !sb.has(x)); }\nfunction asPct(n, d){ return (d && d>0) ? Math.round((n/d)*100) : 0; }\n\nreturn items.map(item => {\n  const out = { ...(item.json || {}) };\n\n  // ---- Inputs ----\n  const jd_required   = uniq(out.required_skills);\n  const jd_preferred  = uniq(out.good_to_have);\n\n  const cand_direct   = uniq(out.candidate_direct_skills);\n  const cand_inferred = uniq(out.candidate_inferred_skills);\n  const cand_soft     = uniq(out.candidate_soft_skills);   // NEW: use for preferred only\n  const cand_edu      = uniq(out.candidate_education);\n\n  const required_total  = jd_required.length;\n  const preferred_total = jd_preferred.length;\n\n  // ---- Required: direct & implied from direct/inferred only ----\n  const req_dir = inter(jd_required,  cand_direct);\n  const req_imp = diff(inter(jd_required,  cand_inferred), req_dir);\n\n  // ---- Preferred: allow soft skills as \"direct\" matches too ----\n  const pref_dir_from_direct = inter(jd_preferred, cand_direct);\n  const pref_dir_from_soft   = inter(jd_preferred, cand_soft);\n  const pref_dir = uniq(pref_dir_from_direct.concat(pref_dir_from_soft)); // union = direct for preferred\n  const pref_imp = diff(inter(jd_preferred, cand_inferred), pref_dir);\n\n  // ---- Missing ----\n  const missing_required  = diff(jd_required,  req_dir.concat(req_imp));\n  const missing_preferred = diff(jd_preferred, pref_dir.concat(pref_imp));\n\n  // ---- Match details ----\n  const reqDirSet  = toSet(req_dir);\n  const reqImpSet  = toSet(req_imp);\n\n  const prefDirDirectSet = toSet(pref_dir_from_direct);\n  const prefDirSoftSet   = toSet(pref_dir_from_soft);\n  const prefImpSet       = toSet(pref_imp);\n\n  const match_details_required = jd_required.map(req => {\n    if (reqDirSet.has(req))  return { req, matched: true,  match_type: 'direct',  source: 'cand_direct'  };\n    if (reqImpSet.has(req))  return { req, matched: true,  match_type: 'implied', source: 'cand_inferred' };\n    return                     { req, matched: false, match_type: 'none',   source: '' };\n  });\n\n  const match_details_preferred = jd_preferred.map(req => {\n    if (prefDirDirectSet.has(req)) return { req, matched: true,  match_type: 'direct',  source: 'cand_direct'  };\n    if (prefDirSoftSet.has(req))   return { req, matched: true,  match_type: 'direct',  source: 'cand_soft'    }; // NEW\n    if (prefImpSet.has(req))       return { req, matched: true,  match_type: 'implied', source: 'cand_inferred' };\n    return                          { req, matched: false, match_type: 'none',   source: '' };\n  });\n\n  // ---- Coverage ----\n  const required_match_direct_count   = req_dir.length;\n  const required_match_implied_count  = req_imp.length;\n  const required_covered              = required_match_direct_count + required_match_implied_count;\n  const required_coverage_pct         = asPct(required_covered, required_total);\n\n  const preferred_match_direct_count  = pref_dir.length;\n  const preferred_match_implied_count = pref_imp.length;\n  const preferred_covered             = preferred_match_direct_count + preferred_match_implied_count;\n  const preferred_coverage_pct        = asPct(preferred_covered, preferred_total);\n\n  // ---- Education penalty (generic & safe) ----\n  const jdReqEdu = out.required_education;\n  const hasJdEdu = jdReqEdu && typeof jdReqEdu === 'string' && jdReqEdu.toLowerCase() !== 'n/a';\n  const education_requirement_missing = !!(hasJdEdu && (!cand_edu || cand_edu.length === 0));\n\n  // ---- WILG scoring (simple, defensible, normalized 0–100) ----\n  const W_REQ_DIR    = 3.0;\n  const W_REQ_IMP    = 1.0;\n  const W_PREF_DIR   = 1.0;  // soft matches count here as \"direct\" preferred\n  const W_PREF_IMP   = 0.5;\n  const PREF_CAP_FR  = 0.25;\n  const EDU_PENALTY  = 3.0;\n\n  let pts_required = (required_match_direct_count * W_REQ_DIR) + (required_match_implied_count * W_REQ_IMP);\n  const maxImp = required_match_direct_count * W_REQ_IMP;\n  if ((required_match_implied_count * W_REQ_IMP) > maxImp) {\n    pts_required = (required_match_direct_count * W_REQ_DIR) + maxImp;\n  }\n\n  let pts_preferred = (preferred_match_direct_count * W_PREF_DIR) + (preferred_match_implied_count * W_PREF_IMP);\n  const req_possible  = (required_total * W_REQ_DIR);\n  const pref_cap_max  = req_possible * PREF_CAP_FR;\n  if (pts_preferred > pref_cap_max) pts_preferred = pref_cap_max;\n\n  let pts = pts_required + pts_preferred;\n  if (education_requirement_missing) pts -= EDU_PENALTY;\n  if (pts < 0) pts = 0;\n\n  const maxPts = req_possible + pref_cap_max;\n  const wilg_score = maxPts > 0 ? Math.round((pts / maxPts) * 100) : 0;\n\n  // ---- Outputs (non-destructive) ----\n  out.required_match_direct   = req_dir;\n  out.required_match_implied  = req_imp;\n  out.preferred_match_direct  = pref_dir;\n  out.preferred_match_implied = pref_imp;\n\n  out.missing_required  = missing_required;\n  out.missing_preferred = missing_preferred;\n\n  out.required_match_direct_count   = required_match_direct_count;\n  out.required_match_implied_count  = required_match_implied_count;\n  out.required_match_total_count    = required_covered;\n  out.required_total                = required_total;\n  out.required_covered              = required_covered;\n  out.required_coverage_pct         = required_coverage_pct;\n\n  out.preferred_match_direct_count  = preferred_match_direct_count;\n  out.preferred_match_implied_count = preferred_match_implied_count;\n  out.preferred_match_total_count   = preferred_covered;\n  out.preferred_total               = preferred_total;\n  out.preferred_covered             = preferred_covered;\n  out.preferred_coverage_pct        = preferred_coverage_pct;\n\n  out.match_details_required  = match_details_required;\n  out.match_details_preferred = match_details_preferred;\n\n  out.education_requirement_missing = education_requirement_missing;\n\n  out.wilg_breakdown = {\n    pts_required_direct: required_match_direct_count * W_REQ_DIR,\n    pts_required_implied_effective: Math.min(required_match_implied_count * W_REQ_IMP, maxImp),\n    pts_preferred_effective: pts_preferred,\n    edu_penalty_applied: education_requirement_missing ? EDU_PENALTY : 0,\n    req_possible_max: req_possible,\n    pref_cap_max: pref_cap_max\n  };\n  out.wilg_score = wilg_score;\n\n  out.__node = 'JD_Can_Cross_v3'; // signature\n\n  return { json: out };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        368
+      ],
+      "id": "12948fe7-043a-40cb-aea5-f158fbbc77b0",
+      "name": "JD-Cand Cross"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\n\nreturn $input.all();// n8n Code node: JD_Can_Cross_prematch (non-destructive, no scoring, no matching)\n// Purpose: assert identity + 6 JD columns + 3 Candidate columns BEFORE the loop.\n// Sources: normalized fields only (njd_* and candidate_*). No WILG, no match logic.\n\nfunction arr(a){\n  if (Array.isArray(a)) return a.slice();\n  if (a == null || a === \"\") return [];\n  return String(a).split(/\\s*[,;|]\\s*/).filter(Boolean);\n}\nfunction uniq(a){ return [...new Set(arr(a))]; }\n\nreturn items.map(item => {\n  const out = { ...(item.json || {}) };\n\n  // ---- Identity (assert) ----\n  out.job_id          = out.job_id ?? out.job_number ?? \"N/A\";\n  out.job_number      = out.job_number ?? \"N/A\";\n  out.company         = out.company ?? \"\";\n  out.job_title       = out.job_title ?? \"\";\n\n  out.candidate_name  = out.candidate_name  ?? out.cand_name   ?? out.meta?.name  ?? \"\";\n  out.candidate_email = out.candidate_email ?? out.cand_email  ?? out.meta?.email ?? \"\";\n  out.candidate_phone = out.candidate_phone ?? out.cand_phone  ?? out.meta?.phone ?? \"\";\n\n  // ---- Normalized JD inputs (prefer njd_*) ----\n  const jd_req_ai   = uniq(out.njd_must_have_skills     ?? out.njd_required_skills   ?? out.required_skills);\n  const jd_pref_ai  = uniq(out.njd_nice_to_have_skills  ?? out.njd_preferred_skills  ?? out.good_to_have);\n  const jd_ai_sk    = uniq(out.njd_tools_and_tech       ?? out.tools_and_tech);\n\n  // ---- Normalized Candidate inputs ----\n  const cand_direct   = uniq(out.candidate_direct_skills ?? out.cand_skills);\n  const cand_inferred = uniq(out.candidate_inferred_skills);\n  const cand_soft     = uniq(out.candidate_soft_skills); // kept for downstream matching if needed\n\n  // ---- The 6 JD columns (prematch) ----\n  // direct/implied are MATCH concepts; keep as empty placeholders for the loop to populate.\n  out.jd_req_direct   = Array.isArray(out.jd_req_direct)   ? out.jd_req_direct   : [];\n  out.jd_req_implied  = Array.isArray(out.jd_req_implied)  ? out.jd_req_implied  : [];\n  out.jd_req_ai       = jd_req_ai;\n\n  out.jd_pref_direct  = Array.isArray(out.jd_pref_direct)  ? out.jd_pref_direct  : [];\n  out.jd_pref_implied = Array.isArray(out.jd_pref_implied) ? out.jd_pref_implied : [];\n  out.jd_pref_ai      = jd_pref_ai;\n\n  // Optional: a general JD skills bucket (not counted in the 6, but handy to see)\n  out.jd_ai_skills    = Array.isArray(out.jd_ai_skills) ? out.jd_ai_skills : jd_ai_sk;\n\n  // ---- The 3 Candidate columns (prematch) ----\n  // required/preferred are MATCH outputs; keep placeholders. AI list = inferred or fallback to direct.\n  out.cand_required   = Array.isArray(out.cand_required)  ? out.cand_required  : [];\n  out.cand_preferred  = Array.isArray(out.cand_preferred) ? out.cand_preferred : [];\n  out.cand_ai_skills  = cand_inferred.length ? cand_inferred : cand_direct;\n\n  // Preserve originals for downstream nodes (non-destructive)\n  out.candidate_direct_skills   = cand_direct;\n  out.candidate_inferred_skills = cand_inferred;\n  out.candidate_soft_skills     = cand_soft;\n\n  out.__node = 'JD_Can_Cross_prematch_v0';\n  return { json: out };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        368
+      ],
+      "id": "9d08aa56-0d58-421a-a47d-c6f7d2b46832",
+      "name": "JD-Cand Cross1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get row(s) in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Collocation Guard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet1": {
+      "main": [
+        [
+          {
+            "node": "Message a model1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model1": {
+      "main": [
+        [
+          {
+            "node": "Normalized_Cand",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalized_JD": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalized_Cand": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "JD-Cand Cross1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model2": {
+      "main": [
+        [
+          {
+            "node": "Parse Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "one_blub": {
+      "main": [
+        [
+          {
+            "node": "Matcher1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "one_blub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Node": {
+      "main": [
+        [
+          {
+            "node": "Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize": {
+      "main": [
+        [
+          {
+            "node": "Wilg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Matcher1": {
+      "main": [
+        [
+          {
+            "node": "Message a model2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collocation Guard": {
+      "main": [
+        [
+          {
+            "node": "Normalized_JD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wilg": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JD-Cand Cross1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "4fcb000a-367f-4e50-b8a7-d80903f9b82c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "db7a94020dcfff009eaf7f23397a9d01f27fceb8b5f47bfe505f6dfd35afb8a6"
+  },
+  "id": "mkmK0mDvCKx13EC6",
+  "tags": []
+}
